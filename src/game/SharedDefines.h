@@ -296,7 +296,7 @@ enum SpellAttributesEx
     SPELL_ATTR_EX_CHANNEL_TRACK_TARGET         = 0x00004000,// 14
     SPELL_ATTR_EX_DISPEL_AURAS_ON_IMMUNITY     = 0x00008000,// 15 remove auras on immunity
     SPELL_ATTR_EX_UNAFFECTED_BY_SCHOOL_IMMUNE  = 0x00010000,// 16 unaffected by school immunity
-    SPELL_ATTR_EX_UNK17                        = 0x00020000,// 17 for auras SPELL_AURA_TRACK_CREATURES, SPELL_AURA_TRACK_RESOURCES and SPELL_AURA_TRACK_STEALTHED select non-stacking tracking spells
+    SPELL_ATTR_EX_UNAUTOCASTABLE_BY_CHARMED    = 0x00020000,// 17 TODO: Investigate more: SPELL_ATTR_EX_PLAYER_CANT_CAST_CHARMED, likely related to MC
     SPELL_ATTR_EX_UNK18                        = 0x00040000,// 18
     SPELL_ATTR_EX_CANT_TARGET_SELF             = 0x00080000,// 19 spells with area effect or friendly targets that exclude the caster
     SPELL_ATTR_EX_REQ_TARGET_COMBO_POINTS      = 0x00100000,// 20 Req combo points on target
@@ -306,7 +306,7 @@ enum SpellAttributesEx
     SPELL_ATTR_EX_UNK24                        = 0x01000000,// 24 Req fishing pole??
     SPELL_ATTR_EX_UNK25                        = 0x02000000,// 25 not set in 2.4.2
     SPELL_ATTR_EX_UNK26                        = 0x04000000,// 26
-    SPELL_ATTR_EX_UNK27                        = 0x08000000,// 27
+    SPELL_ATTR_EX_REFUND_POWER                 = 0x08000000,// 27 All these spells refund power on miss, dodge, parry (? Guesswork)
     SPELL_ATTR_EX_DONT_DISPLAY_IN_AURA_BAR     = 0x10000000,// 28
     SPELL_ATTR_EX_CHANNEL_DISPLAY_SPELL_NAME   = 0x20000000,// 29
     SPELL_ATTR_EX_ENABLE_AT_DODGE              = 0x40000000,// 30 overpower
@@ -335,7 +335,7 @@ enum SpellAttributesEx2
     SPELL_ATTR_EX2_UNK17                       = 0x00020000,// 17 suspend weapon timer instead of resetting it, (?Hunters Shot and Stings only have this flag?)
     SPELL_ATTR_EX2_REQ_DEAD_PET                = 0x00040000,// 18 Only Revive pet - possible req dead pet
     SPELL_ATTR_EX2_NOT_NEED_SHAPESHIFT         = 0x00080000,// 19 does not necessarly need shapeshift
-    SPELL_ATTR_EX2_UNK20                       = 0x00100000,// 20
+    SPELL_ATTR_EX2_FACING_TARGETS_BACK         = 0x00100000,// 20 TODO: CONFIRM!
     SPELL_ATTR_EX2_DAMAGE_REDUCED_SHIELD       = 0x00200000,// 21 for ice blocks, pala immunity buffs, priest absorb shields, but used also for other spells -> not sure!
     SPELL_ATTR_EX2_UNK22                       = 0x00400000,// 22
     SPELL_ATTR_EX2_IS_ARCANE_CONCENTRATION     = 0x00800000,// 23 Only mage Arcane Concentration have this flag
@@ -354,7 +354,7 @@ enum SpellAttributesEx3
     SPELL_ATTR_EX3_UNK0                        = 0x00000001,// 0
     SPELL_ATTR_EX3_UNK1                        = 0x00000002,// 1
     SPELL_ATTR_EX3_UNK2                        = 0x00000004,// 2
-    SPELL_ATTR_EX3_UNK3                        = 0x00000008,// 3
+    SPELL_ATTR_EX3_BLOCKABLE_SPELL             = 0x00000008,// 3 TODO: Investigate more
     SPELL_ATTR_EX3_IGNORE_RESURRECTION_TIMER   = 0x00000010,// 4 Druid Rebirth only this spell have this flag
     SPELL_ATTR_EX3_UNK5                        = 0x00000020,// 5
     SPELL_ATTR_EX3_UNK6                        = 0x00000040,// 6
@@ -369,7 +369,7 @@ enum SpellAttributesEx3
     SPELL_ATTR_EX3_UNK15                       = 0x00008000,// 15 Auto Shoot, Shoot, Throw,  - this is autoshot flag
     SPELL_ATTR_EX3_UNK16                       = 0x00010000,// 16 no triggers effects that trigger on casting a spell??
     SPELL_ATTR_EX3_NO_INITIAL_AGGRO            = 0x00020000,// 17 Causes no aggro if not missed
-    SPELL_ATTR_EX3_CANT_MISS                   = 0x00040000,// 18 Spell should always hit its target
+    SPELL_ATTR_EX3_CANT_MISS                   = 0x00040000,// 18 Spell should always hit its target 
     SPELL_ATTR_EX3_UNK19                       = 0x00080000,// 19
     SPELL_ATTR_EX3_DEATH_PERSISTENT            = 0x00100000,// 20 Death persistent spells
     SPELL_ATTR_EX3_UNK21                       = 0x00200000,// 21
@@ -392,7 +392,7 @@ enum SpellAttributesEx4
     SPELL_ATTR_EX4_UNK2                        = 0x00000004,// 2
     SPELL_ATTR_EX4_UNK3                        = 0x00000008,// 3
     SPELL_ATTR_EX4_UNK4                        = 0x00000010,// 4 This will no longer cause guards to attack on use??
-    SPELL_ATTR_EX4_UNAUTOCASTABLE              = 0x00000020,// 5
+    SPELL_ATTR_EX4_UNK5                        = 0x00000020,// 5
     SPELL_ATTR_EX4_NOT_STEALABLE               = 0x00000040,// 6 although such auras might be dispellable, they cannot be stolen
     SPELL_ATTR_EX4_CAN_CAST_WHILE_CASTING      = 0x00000080,// 7 In theory, can use this spell while another is channeled/cast/autocast
     SPELL_ATTR_EX4_STACK_DOT_MODIFIER          = 0x00000100,// 8 no effect on non DoTs?
@@ -630,8 +630,8 @@ enum SpellEffects
     SPELL_EFFECT_MODIFY_THREAT_PERCENT     = 125,
     SPELL_EFFECT_126                       = 126,
     SPELL_EFFECT_127                       = 127,
-    SPELL_EFFECT_128                       = 128,
-    SPELL_EFFECT_129                       = 129,
+    SPELL_EFFECT_APPLY_AREA_AURA_FRIEND    = 128,
+    SPELL_EFFECT_APPLY_AREA_AURA_ENEMY     = 129,
     TOTAL_SPELL_EFFECTS                    = 130
 };
 
@@ -951,6 +951,7 @@ enum Targets
     TARGET_ALL_RAID_AROUND_CASTER      = 56,
     TARGET_SINGLE_FRIEND_2             = 57,
     TARGET_58                          = 58,
+    TARGET_FRIENDLY_FRONTAL_CONE       = 59,
     TARGET_NARROW_FRONTAL_CONE         = 60,
     TARGET_AREAEFFECT_PARTY_AND_CLASS  = 61,
     TARGET_DUELVSPLAYER_COORDINATES    = 63,
