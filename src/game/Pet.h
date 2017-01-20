@@ -169,7 +169,7 @@ class MANGOS_DLL_SPEC Pet : public Creature
 
         bool Create(uint32 guidlow, CreatureCreatePos& cPos, CreatureInfo const* cinfo, uint32 pet_number);
         bool CreateBaseAtCreature(Creature* creature);
-        bool LoadPetFromDB(Player* owner, uint32 petentry = 0, uint32 petnumber = 0, bool current = false, uint32 healthPercentage = 0);
+        bool LoadPetFromDB(Player* owner, uint32 petentry = 0, uint32 petnumber = 0, bool current = false, uint32 healthPercentage = 0, bool permanentOnly = false);
         void SavePetToDB(PetSaveMode mode);
         void Unsummon(PetSaveMode mode, Unit* owner = nullptr);
         static void DeleteFromDB(uint32 guidlow, bool separate_transaction = true);
@@ -203,9 +203,9 @@ class MANGOS_DLL_SPEC Pet : public Creature
         void LooseHappiness();
         void TickLoyaltyChange();
         void ModifyLoyalty(int32 addvalue);
-        HappinessState GetHappinessState();
-        uint32 GetMaxLoyaltyPoints(uint32 level);
-        uint32 GetStartLoyaltyPoints(uint32 level);
+        HappinessState GetHappinessState() const;
+        uint32 GetMaxLoyaltyPoints(uint32 level) const;
+        uint32 GetStartLoyaltyPoints(uint32 level) const;
         void KillLoyaltyBonus(uint32 level);
         uint32 GetLoyaltyLevel() { return GetByteValue(UNIT_FIELD_BYTES_1, 1); }
         void SetLoyaltyLevel(LoyaltyLevel level);
@@ -214,11 +214,11 @@ class MANGOS_DLL_SPEC Pet : public Creature
         void SynchronizeLevelWithOwner();
         void InitStatsForLevel(uint32 level);
         bool HaveInDiet(ItemPrototype const* item) const;
-        uint32 GetCurrentFoodBenefitLevel(uint32 itemlevel);
+        uint32 GetCurrentFoodBenefitLevel(uint32 itemlevel) const;
         void SetDuration(int32 dur) { m_duration = dur; }
-        int32 GetDuration() { return m_duration; }
+        int32 GetDuration() const { return m_duration; }
 
-        int32 GetBonusDamage() { return m_bonusdamage; }
+        int32 GetBonusDamage() const { return m_bonusdamage; }
         void SetBonusDamage(int32 damage) { m_bonusdamage = damage; }
 
         bool UpdateStats(Stats stat) override;
@@ -230,10 +230,10 @@ class MANGOS_DLL_SPEC Pet : public Creature
         void UpdateAttackPowerAndDamage(bool ranged = false) override;
         void UpdateDamagePhysical(WeaponAttackType attType) override;
 
-        bool   CanTakeMoreActiveSpells(uint32 SpellIconID);
+        bool   CanTakeMoreActiveSpells(uint32 SpellIconID) const;
         void   ToggleAutocast(uint32 spellid, bool apply);
-        bool   HasTPForSpell(uint32 spellid);
-        int32  GetTPForSpell(uint32 spellid);
+        bool   HasTPForSpell(uint32 spellid) const;
+        int32  GetTPForSpell(uint32 spellid) const;
 
         void SetModeFlags(PetModeFlags mode);
         PetModeFlags GetModeFlags() const { return m_petModeFlags; }
@@ -271,7 +271,7 @@ class MANGOS_DLL_SPEC Pet : public Creature
         virtual void DeleteCharmInfo() override;
 
         void  SetTP(int32 TP);
-        int32 GetDispTP();
+        int32 GetDispTP() const;
 
         int32   m_TrainingPoints;
         uint32  m_resetTalentsCost;
@@ -287,8 +287,10 @@ class MANGOS_DLL_SPEC Pet : public Creature
         bool    m_removed;                                  // prevent overwrite pet state in DB at next Pet::Update if pet already removed(saved)
 
         // return charminfo ai only when this pet is possessed. (eye of the beast case for ex.)
-        virtual CreatureAI* AI() override { if (hasUnitState(UNIT_STAT_CONTROLLED) && m_charmInfo->GetAI()) return m_charmInfo->GetAI(); else return m_ai; }
+        virtual CreatureAI* AI() override { if (hasUnitState(UNIT_STAT_CONTROLLED) && m_charmInfo->GetAI()) return m_charmInfo->GetAI(); else return m_ai.get(); }
         virtual CombatData* GetCombatData() override { return m_combatData; }
+
+        void InitTamedPetPassives(Unit* player);
 
     protected:
         uint32  m_happinessTimer;

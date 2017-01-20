@@ -31,7 +31,7 @@
 #include "NPCHandler.h"
 #include "SQLStorages.h"
 
-void WorldSession::SendNameQueryOpcode(Player* p)
+void WorldSession::SendNameQueryOpcode(Player* p) const
 {
     if (!p)
         return;
@@ -48,7 +48,7 @@ void WorldSession::SendNameQueryOpcode(Player* p)
     SendPacket(data);
 }
 
-void WorldSession::SendNameQueryOpcodeFromDB(ObjectGuid guid)
+void WorldSession::SendNameQueryOpcodeFromDB(ObjectGuid guid) const
 {
     CharacterDatabase.AsyncPQuery(&WorldSession::SendNameQueryOpcodeFromDBCallBack, GetAccountId(),
                                   //          0     1     2     3       4
@@ -276,8 +276,6 @@ void WorldSession::HandleNpcTextQueryOpcode(WorldPacket& recv_data)
 
     DETAIL_LOG("WORLD: CMSG_NPC_TEXT_QUERY ID '%u'", textID);
 
-    _player->SetTargetGuid(guid);
-
     GossipText const* pGossip = sObjectMgr.GetGossipText(textID);
 
     WorldPacket data(SMSG_NPC_TEXT_UPDATE, 100);            // guess size
@@ -386,7 +384,7 @@ void WorldSession::HandlePageTextQueryOpcode(WorldPacket& recv_data)
     }
 }
 
-void WorldSession::SendQueryTimeResponse()
+void WorldSession::SendQueryTimeResponse() const
 {
     WorldPacket data(SMSG_QUERY_TIME_RESPONSE, 4);
     data << uint32(time(nullptr));

@@ -55,7 +55,7 @@ void CreatureAI::AttackedBy(Unit* attacker)
         AttackStart(attacker);
 }
 
-CanCastResult CreatureAI::CanCastSpell(Unit* pTarget, const SpellEntry* pSpell, bool isTriggered)
+CanCastResult CreatureAI::CanCastSpell(Unit* pTarget, const SpellEntry* pSpell, bool isTriggered) const
 {
     // If not triggered, we check
     if (!isTriggered)
@@ -100,7 +100,7 @@ CanCastResult CreatureAI::CanCastSpell(Unit* pTarget, const SpellEntry* pSpell, 
         return CAST_FAIL_OTHER;
 }
 
-CanCastResult CreatureAI::DoCastSpellIfCan(Unit* pTarget, uint32 uiSpell, uint32 uiCastFlags, ObjectGuid uiOriginalCasterGUID)
+CanCastResult CreatureAI::DoCastSpellIfCan(Unit* pTarget, uint32 uiSpell, uint32 uiCastFlags, ObjectGuid uiOriginalCasterGUID) const
 {
     Unit* pCaster = m_unit;
 
@@ -110,7 +110,7 @@ CanCastResult CreatureAI::DoCastSpellIfCan(Unit* pTarget, uint32 uiSpell, uint32
     // Allowed to cast only if not casting (unless we interrupt ourself) or if spell is triggered
     if (!pCaster->IsNonMeleeSpellCasted(false) || (uiCastFlags & (CAST_TRIGGERED | CAST_INTERRUPT_PREVIOUS)))
     {
-        if (const SpellEntry* pSpell = sSpellStore.LookupEntry(uiSpell))
+        if (const SpellEntry* pSpell = sSpellTemplate.LookupEntry<SpellEntry>(uiSpell))
         {
             // If cast flag CAST_AURA_NOT_PRESENT is active, check if target already has aura on them
             if (uiCastFlags & CAST_AURA_NOT_PRESENT)
@@ -157,7 +157,7 @@ CanCastResult CreatureAI::DoCastSpellIfCan(Unit* pTarget, uint32 uiSpell, uint32
         return CAST_FAIL_IS_CASTING;
 }
 
-bool CreatureAI::DoMeleeAttackIfReady()
+bool CreatureAI::DoMeleeAttackIfReady() const
 {
     return m_unit->UpdateMeleeAttackingState();
 }
@@ -180,7 +180,7 @@ void CreatureAI::SetCombatMovement(bool enable, bool stopOrStartMovement /*=fals
     }
 }
 
-void CreatureAI::HandleMovementOnAttackStart(Unit* victim)
+void CreatureAI::HandleMovementOnAttackStart(Unit* victim) const
 {
     MotionMaster* creatureMotion = m_unit->GetMotionMaster();
     if (m_isCombatMovement)

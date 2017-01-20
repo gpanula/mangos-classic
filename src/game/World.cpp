@@ -140,6 +140,8 @@ void World::CleanupsBeforeStop()
     KickAll();                                       // save and kick all players
     UpdateSessions(1);                               // real players unload required UpdateSessions call
     sBattleGroundMgr.DeleteAllBattleGrounds();       // unload battleground templates before different singletons destroyed
+    sMapMgr.UnloadAll();                             // unload all grids (including locked in memory)
+    sScriptMgr.UnloadScriptLibrary();                // unload all scripts
 }
 
 /// Find a session by its id
@@ -840,6 +842,10 @@ void World::SetInitialWorldSettings()
     ///- Remove the bones (they should not exist in DB though) and old corpses after a restart
     CharacterDatabase.PExecute("DELETE FROM corpse WHERE corpse_type = '0' OR time < (UNIX_TIMESTAMP()-'%u')", 3 * DAY);
 
+    /// load spell_dbc first! dbc's need them
+    sLog.outString("Loading spell_template...");
+    sObjectMgr.LoadSpellTemplate();
+
     ///- Load the DBC files
     sLog.outString("Initialize DBC data stores...");
     LoadDBCStores(m_dataPath);
@@ -993,8 +999,7 @@ void World::SetInitialWorldSettings()
     sLog.outString(">>> Game Event Data loaded");
     sLog.outString();
 
-    // Load Conditions
-    sLog.outString("Loading Conditions...");
+    sLog.outString("Loading Conditions...");                // Load Conditions
     sObjectMgr.LoadConditions();
 
     sLog.outString("Creating map persistent states for non-instanceable maps...");     // must be after PackInstances(), LoadCreatures(), sPoolMgr.LoadFromDB(), sGameEventMgr.LoadFromDB();
@@ -1174,9 +1179,6 @@ void World::SetInitialWorldSettings()
             break;
         case SCRIPT_LOAD_ERR_WRONG_API:
             sLog.outError("Scripting library has wrong list functions (outdated?).");
-            break;
-        case SCRIPT_LOAD_ERR_OUTDATED:
-            sLog.outError("Scripting library build for old mangosd revision. You need rebuild it.");
             break;
     }
     sLog.outString();
@@ -1472,7 +1474,7 @@ namespace MaNGOS
                     do_helper(data_list, (char*)text);
             }
         private:
-            char* lineFromMessage(char*& pos) { char* start = strtok(pos, "\n"); pos = nullptr; return start; }
+            char* lineFromMessage(char*& pos) const { char* start = strtok(pos, "\n"); pos = nullptr; return start; }
             void do_helper(WorldPacketList& data_list, char* text)
             {
                 char* pos = text;
@@ -2058,7 +2060,7 @@ void World::setConfigMinMax(eConfigFloatValues index, char const* fieldname, flo
     }
 }
 
-bool World::configNoReload(bool reload, eConfigUInt32Values index, char const* fieldname, uint32 defvalue)
+bool World::configNoReload(bool reload, eConfigUInt32Values index, char const* fieldname, uint32 defvalue) const
 {
     if (!reload)
         return true;
@@ -2070,7 +2072,7 @@ bool World::configNoReload(bool reload, eConfigUInt32Values index, char const* f
     return false;
 }
 
-bool World::configNoReload(bool reload, eConfigInt32Values index, char const* fieldname, int32 defvalue)
+bool World::configNoReload(bool reload, eConfigInt32Values index, char const* fieldname, int32 defvalue) const
 {
     if (!reload)
         return true;
@@ -2082,7 +2084,7 @@ bool World::configNoReload(bool reload, eConfigInt32Values index, char const* fi
     return false;
 }
 
-bool World::configNoReload(bool reload, eConfigFloatValues index, char const* fieldname, float defvalue)
+bool World::configNoReload(bool reload, eConfigFloatValues index, char const* fieldname, float defvalue) const
 {
     if (!reload)
         return true;
@@ -2094,7 +2096,7 @@ bool World::configNoReload(bool reload, eConfigFloatValues index, char const* fi
     return false;
 }
 
-bool World::configNoReload(bool reload, eConfigBoolValues index, char const* fieldname, bool defvalue)
+bool World::configNoReload(bool reload, eConfigBoolValues index, char const* fieldname, bool defvalue) const
 {
     if (!reload)
         return true;
@@ -2106,7 +2108,7 @@ bool World::configNoReload(bool reload, eConfigBoolValues index, char const* fie
     return false;
 }
 
-void World::InvalidatePlayerDataToAllClient(ObjectGuid guid)
+void World::InvalidatePlayerDataToAllClient(ObjectGuid guid) const
 {
     WorldPacket data(SMSG_INVALIDATE_PLAYER, 8);
     data << guid;
