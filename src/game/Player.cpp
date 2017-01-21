@@ -245,7 +245,7 @@ SpellModifier::SpellModifier(SpellModOp _op, SpellModType _type, int32 _value, A
 
 bool SpellModifier::isAffectedOnSpell(SpellEntry const* spell) const
 {
-    SpellEntry const* affect_spell = sSpellStore.LookupEntry(spellId);
+    SpellEntry const* affect_spell = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
     // False if affect_spell == nullptr or spellFamily not equal
     if (!affect_spell || affect_spell->SpellFamilyName != spell->SpellFamilyName)
         return false;
@@ -339,7 +339,7 @@ void TradeData::SetMoney(uint32 money)
     Update();
 }
 
-void TradeData::Update(bool for_trader /*= true*/)
+void TradeData::Update(bool for_trader /*= true*/) const
 {
     if (for_trader)
         m_trader->GetSession()->SendUpdateTrade(true);      // player state for trader
@@ -528,6 +528,8 @@ Player::Player(WorldSession* session): Unit(), m_mover(this), m_camera(this), m_
 
     m_lastFallTime = 0;
     m_lastFallZ = 0;
+
+    m_cannotBeDetectedTimer = 0;
 }
 
 Player::~Player()
@@ -875,7 +877,11 @@ uint32 Player::EnvironmentalDamage(EnvironmentalDamageType type, uint32 damage)
 
     damage -= absorb + resist;
 
-    DealDamageMods(this, damage, &absorb);
+    DamageEffectType damageType = SELF_DAMAGE;
+    if (type == DAMAGE_FALL && getClass() == CLASS_ROGUE)
+        damageType = SELF_DAMAGE_ROGUE_FALL;
+
+    DealDamageMods(this, damage, &absorb, damageType);
 
     WorldPacket data(SMSG_ENVIRONMENTALDAMAGELOG, (21));
     data << GetObjectGuid();
@@ -884,10 +890,6 @@ uint32 Player::EnvironmentalDamage(EnvironmentalDamageType type, uint32 damage)
     data << uint32(absorb);
     data << uint32(resist);
     SendMessageToSet(data, true);
-
-    DamageEffectType damageType = SELF_DAMAGE;
-    if (type == DAMAGE_FALL && getClass() == CLASS_ROGUE)
-        damageType = SELF_DAMAGE_ROGUE_FALL;
 
     uint32 final_damage = DealDamage(this, damage, nullptr, damageType, SPELL_SCHOOL_MASK_NORMAL, nullptr, false);
 
@@ -903,7 +905,7 @@ uint32 Player::EnvironmentalDamage(EnvironmentalDamageType type, uint32 damage)
     return final_damage;
 }
 
-int32 Player::getMaxTimer(MirrorTimerType timer)
+int32 Player::getMaxTimer(MirrorTimerType timer) const
 {
     switch (timer)
     {
@@ -1225,6 +1227,9 @@ void Player::Update(uint32 update_diff, uint32 p_time)
         else
             m_zoneUpdateTimer -= update_diff;
     }
+
+    if (m_cannotBeDetectedTimer > 0)
+        m_cannotBeDetectedTimer -= update_diff;
 
     if (isAlive())
     {
@@ -1641,7 +1646,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
             // setup delayed teleport flag
             // if teleport spell is casted in Unit::Update() func
             // then we need to delay it until update process will be finished
-            if (SetDelayedTeleportFlagIfCan())
+            if (!GetSession()->PlayerLogout() && SetDelayedTeleportFlagIfCan())
             {
                 SetSemaphoreTeleportFar(true);
                 // lets save teleport destination for player
@@ -2228,7 +2233,7 @@ void Player::RemoveFromGroup(Group* group, ObjectGuid guid)
     }
 }
 
-void Player::SendLogXPGain(uint32 GivenXP, Unit* victim, uint32 RestXP)
+void Player::SendLogXPGain(uint32 GivenXP, Unit* victim, uint32 RestXP) const
 {
     WorldPacket data(SMSG_LOG_XPGAIN, 21);
     data << (victim ? victim->GetObjectGuid() : ObjectGuid());// guid
@@ -2528,7 +2533,7 @@ void Player::InitStatsForLevel(bool reapplyMods)
         pet->SynchronizeLevelWithOwner();
 }
 
-void Player::SendInitialSpells()
+void Player::SendInitialSpells() const
 {
     time_t curTime = time(nullptr);
     time_t infTime = curTime + infinityCooldownDelayCheck;
@@ -2563,7 +2568,7 @@ void Player::SendInitialSpells()
     data << uint16(spellCooldowns);
     for (SpellCooldowns::const_iterator itr = m_spellCooldowns.begin(); itr != m_spellCooldowns.end(); ++itr)
     {
-        SpellEntry const* sEntry = sSpellStore.LookupEntry(itr->first);
+        SpellEntry const* sEntry = sSpellTemplate.LookupEntry<SpellEntry>(itr->first);
         if (!sEntry)
             continue;
 
@@ -2614,7 +2619,7 @@ void Player::RemoveMail(uint32 id)
     }
 }
 
-void Player::SendMailResult(uint32 mailId, MailResponseType mailAction, MailResponseResult mailError, uint32 equipError, uint32 item_guid, uint32 item_count)
+void Player::SendMailResult(uint32 mailId, MailResponseType mailAction, MailResponseResult mailError, uint32 equipError, uint32 item_guid, uint32 item_count) const
 {
     WorldPacket data(SMSG_SEND_MAIL_RESULT, (4 + 4 + 4 + (mailError == MAIL_ERR_EQUIP_ERROR ? 4 : (mailAction == MAIL_ITEM_TAKEN ? 4 + 4 : 0))));
     data << (uint32) mailId;
@@ -2630,7 +2635,7 @@ void Player::SendMailResult(uint32 mailId, MailResponseType mailAction, MailResp
     GetSession()->SendPacket(data);
 }
 
-void Player::SendNewMail()
+void Player::SendNewMail() const
 {
     // deliver undelivered mail
     WorldPacket data(SMSG_RECEIVED_MAIL, 4);
@@ -2673,7 +2678,7 @@ void Player::AddNewMailDeliverTime(time_t deliver_time)
 
 bool Player::addSpell(uint32 spell_id, bool active, bool learning, bool dependent, bool disabled)
 {
-    SpellEntry const* spellInfo = sSpellStore.LookupEntry(spell_id);
+    SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spell_id);
     if (!spellInfo)
     {
         // do character spell book cleanup (all characters)
@@ -2889,7 +2894,7 @@ bool Player::addSpell(uint32 spell_id, bool active, bool learning, bool dependen
                 PlayerSpell& playerSpell2 = itr2->second;
 
                 if (playerSpell2.state == PLAYERSPELL_REMOVED) continue;
-                SpellEntry const* i_spellInfo = sSpellStore.LookupEntry(itr2->first);
+                SpellEntry const* i_spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(itr2->first);
                 if (!i_spellInfo) continue;
 
                 if (sSpellMgr.IsRankSpellDueToSpell(spellInfo, itr2->first))
@@ -3242,7 +3247,7 @@ void Player::removeSpell(uint32 spell_id, bool disabled, bool learn_low_rank)
 
     if (uint32 prev_id = sSpellMgr.GetPrevSpellInChain(spell_id))
     {
-        SpellEntry const* spellInfo = sSpellStore.LookupEntry(spell_id);
+        SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spell_id);
 
         // if talent then lesser rank also talent and need learn
         if (talentPos)
@@ -3344,7 +3349,7 @@ void Player::_LoadSpellCooldowns(QueryResult* result)
             uint32 item_id  = fields[1].GetUInt32();
             time_t db_time  = (time_t)fields[2].GetUInt64();
 
-            if (!sSpellStore.LookupEntry(spell_id))
+            if (!sSpellTemplate.LookupEntry<SpellEntry>(spell_id))
             {
                 sLog.outError("Player %u has unknown spell %u in `character_spell_cooldown`, skipping.", GetGUIDLow(), spell_id);
                 continue;
@@ -3707,8 +3712,8 @@ TrainerSpellState Player::GetTrainerSpellState(TrainerSpell const* trainer_spell
         return TRAINER_SPELL_RED;
 
     // exist, already checked at loading
-    SpellEntry const* spell = sSpellStore.LookupEntry(trainer_spell->spell);
-    SpellEntry const* TriggerSpell = sSpellStore.LookupEntry(spell->EffectTriggerSpell[0]);
+    SpellEntry const* spell = sSpellTemplate.LookupEntry<SpellEntry>(trainer_spell->spell);
+    SpellEntry const* TriggerSpell = sSpellTemplate.LookupEntry<SpellEntry>(spell->EffectTriggerSpell[0]);
 
 
     // known spell
@@ -3743,7 +3748,7 @@ TrainerSpellState Player::GetTrainerSpellState(TrainerSpell const* trainer_spell
             return TRAINER_SPELL_RED;
 
     // exist, already checked at loading
-    // SpellEntry const* spell = sSpellStore.LookupEntry(trainer_spell->spell);
+    // SpellEntry const* spell = sSpellTemplate.LookupEntry<SpellEntry>(trainer_spell->spell);
 
     // secondary prof. or not prof. spell
     uint32 skill = spell->EffectMiscValue[1];
@@ -4026,7 +4031,15 @@ void Player::SetRoot(bool enable)
     WorldPacket data(enable ? SMSG_FORCE_MOVE_ROOT : SMSG_FORCE_MOVE_UNROOT, GetPackGUID().size() + 4);
     data << GetPackGUID();
     data << uint32(0);
-    SendMessageToSet(data, true);
+
+    if (GetMover() && GetMover()->GetTypeId() == TYPEID_PLAYER)
+    {
+        Player* pMover = (Player*)GetMover();
+        if (pMover != this)
+            pMover->GetSession()->SendPacket(data);
+    }
+
+    GetSession()->SendPacket(data);
 }
 
 void Player::SetWaterWalk(bool enable)
@@ -4696,7 +4709,7 @@ uint32 Player::GetShieldBlockValue() const
     return uint32(value);
 }
 
-float Player::GetMeleeCritFromAgility()
+float Player::GetMeleeCritFromAgility() const
 {
     // from mangos 3462 for 1.12
     float val = 0.0f, classrate = 0.0f;
@@ -4719,79 +4732,39 @@ float Player::GetMeleeCritFromAgility()
     return val;
 }
 
-float Player::GetDodgeFromAgility()
+// Static multipliers for converting agi into dodge chance
+static const float PLAYER_AGI_TO_DODGE[MAX_CLASSES] =
 {
-    // from mangos 3462 for 1.12
-    float val = 0, classrate = 0;
+    0.00000f, // [0]  <Unused>
+    0.05000f, // [1]  Warrior
+    0.05000f, // [2]  Paladin
+    0.03774f, // [3]  Hunter
+    0.06897f, // [4]  Rogue
+    0.05000f, // [5]  Priest
+    0.00000f, // [6]  <Unused>
+    0.05000f, // [7]  Shaman
+    0.05000f, // [8]  Mage
+    0.05000f, // [9]  Warlock
+    0.00000f, // [10] <Unused>
+    0.05000f, // [11] Druid
+};
 
-    // dodge
-    if (getClass() == CLASS_HUNTER) classrate = 26.5;
-    else if (getClass() == CLASS_ROGUE)  classrate = 14.5;
-    else classrate = 20;
-    ///*+(Defense*0,04);
-    if (getRace() == RACE_NIGHTELF)
-        val = GetStat(STAT_AGILITY) / classrate + 1;
-    else
-        val = GetStat(STAT_AGILITY) / classrate;
-
-    return val;
-
-    /* [-ZERO]
-    // Table for base dodge values
-    const float dodge_base[MAX_CLASSES] =
-    {
-         0.0075f,   // Warrior
-         0.00652f,  // Paladin
-        -0.0545f,   // Hunter
-        -0.0059f,   // Rogue
-         0.03183f,  // Priest
-         0.0114f,   // DK
-         0.0167f,   // Shaman
-         0.034575f, // Mage
-         0.02011f,  // Warlock
-         0.0f,      // ??
-        -0.0187f    // Druid
-    };
-    // Crit/agility to dodge/agility coefficient multipliers
-    const float crit_to_dodge[MAX_CLASSES] =
-    {
-         1.1f,      // Warrior
-         1.0f,      // Paladin
-         1.6f,      // Hunter
-         2.0f,      // Rogue
-         1.0f,      // Priest
-         1.0f,      // DK?
-         1.0f,      // Shaman
-         1.0f,      // Mage
-         1.0f,      // Warlock
-         0.0f,      // ??
-         1.7f       // Druid
-    };
-
-    uint32 level = getLevel();
-    uint32 pclass = getClass();
-
-    if (level>GT_MAX_LEVEL) level = GT_MAX_LEVEL;
-
-    // Dodge per agility for most classes equal crit per agility (but for some classes need apply some multiplier)
-    GtChanceToMeleeCritEntry  const *dodgeRatio = sGtChanceToMeleeCritStore.LookupEntry((pclass-1)*GT_MAX_LEVEL + level-1);
-    if (dodgeRatio==nullptr || pclass > MAX_CLASSES)
+float Player::GetDodgeFromAgility(float amount)
+{
+    const uint32 pclass = getClass();
+    if (pclass >= MAX_CLASSES)
         return 0.0f;
-
-    float dodge=dodge_base[pclass-1] + GetStat(STAT_AGILITY) * dodgeRatio->ratio * crit_to_dodge[pclass-1];
-    return dodge*100.0f; */
+    return (amount * PLAYER_AGI_TO_DODGE[pclass]);
 }
 
-float Player::GetSpellCritFromIntellect()
+float Player::GetSpellCritFromIntellect() const
 {
-// Chance to crit is computed from INT and LEVEL as follows:
+    // Chance to crit is computed from INT and LEVEL as follows:
     //   chance = base + INT / (rate0 + rate1 * LEVEL)
     // The formula keeps the crit chance at %5 on every level unless the player
     // increases his intelligence by other means (enchants, buffs, talents, ...)
 
     //[TZERO] from mangos 3462 for 1.12 MUST BE CHECKED
-    float val = 0.0f;
-
     static const struct
     {
         float base;
@@ -4812,24 +4785,15 @@ float Player::GetSpellCritFromIntellect()
         {   0.0f,   0.0f,  10.0f  },                        // 10: unused
         {   3.33f, 12.41f,  0.79f }                         // 11: druid
     };
-    float crit_chance;
-
-    // only players use intelligence for critical chance computations
-    if (GetTypeId() == TYPEID_PLAYER)
-    {
-        int my_class = getClass();
-        float crit_ratio = crit_data[my_class].rate0 + crit_data[my_class].rate1 * getLevel();
-        crit_chance = crit_data[my_class].base + GetStat(STAT_INTELLECT) / crit_ratio;
-    }
-    else
-        crit_chance = m_baseSpellCritChance;
-
-    crit_chance = crit_chance > 0.0 ? crit_chance : 0.0;
-
-    return crit_chance;
+    // FIXME: Add base value and scaling for hunters, fix the formula
+    const uint32 pclass = getClass();
+    if (pclass >= MAX_CLASSES)
+        return 0.0f;
+    const float crit_ratio = crit_data[pclass].rate0 + crit_data[pclass].rate1 * getLevel();
+    return (crit_data[pclass].base + (GetStat(STAT_INTELLECT) / crit_ratio));
 }
 
-float Player::OCTRegenHPPerSpirit()
+float Player::OCTRegenHPPerSpirit() const
 {
     float regen = 0.0f;
 
@@ -4852,7 +4816,7 @@ float Player::OCTRegenHPPerSpirit()
     return regen;
 }
 
-float Player::OCTRegenMPPerSpirit()
+float Player::OCTRegenMPPerSpirit() const
 {
     float addvalue = 0.0;
 
@@ -5478,7 +5442,7 @@ bool Player::IsActionButtonDataValid(uint8 button, uint32 action, uint8 type, Pl
     {
         case ACTION_BUTTON_SPELL:
         {
-            SpellEntry const* spellProto = sSpellStore.LookupEntry(action);
+            SpellEntry const* spellProto = sSpellTemplate.LookupEntry<SpellEntry>(action);
             if (!spellProto)
             {
                 if (player)
@@ -5684,7 +5648,7 @@ void Player::CheckAreaExploreAndOutdoor()
         {
             if (itr->second.state == PLAYERSPELL_REMOVED)
                 continue;
-            SpellEntry const* spellInfo = sSpellStore.LookupEntry(itr->first);
+            SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(itr->first);
             if (!spellInfo || !IsNeedCastSpellAtOutdoor(spellInfo) || HasAura(itr->first))
                 continue;
             if ((spellInfo->Stances || spellInfo->StancesNot) && !IsNeedCastSpellAtFormApply(spellInfo, GetShapeshiftForm()))
@@ -5799,7 +5763,7 @@ ReputationRank Player::GetReputationRank(uint32 faction) const
 }
 
 // Calculate total reputation percent player gain with quest/creature level
-int32 Player::CalculateReputationGain(ReputationSource source, int32 rep, int32 faction, uint32 creatureOrQuestLevel, bool noAuraBonus)
+int32 Player::CalculateReputationGain(ReputationSource source, int32 rep, int32 faction, uint32 creatureOrQuestLevel, bool noAuraBonus) const
 {
     float percent = 100.0f;
 
@@ -6302,7 +6266,7 @@ void Player::UpdateArea(uint32 newArea)
     UpdateAreaDependentAuras();
 }
 
-bool Player::CanUseCapturePoint()
+bool Player::CanUseCapturePoint() const
 {
     return isAlive() &&                                     // living
            !HasStealthAura() &&                             // not stealthed
@@ -6767,7 +6731,7 @@ void Player::ApplyItemEquipSpell(Item* item, bool apply, bool form_change)
         }
 
         // check if it is valid spell
-        SpellEntry const* spellproto = sSpellStore.LookupEntry(spellData.SpellId);
+        SpellEntry const* spellproto = sSpellTemplate.LookupEntry<SpellEntry>(spellData.SpellId);
         if (!spellproto)
             continue;
 
@@ -6880,7 +6844,7 @@ void Player::CastItemCombatSpell(Unit* Target, WeaponAttackType attType)
         if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_CHANCE_ON_HIT)
             continue;
 
-        SpellEntry const* spellInfo = sSpellStore.LookupEntry(spellData.SpellId);
+        SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellData.SpellId);
         if (!spellInfo)
         {
             sLog.outError("WORLD: unknown Item spellid %i", spellData.SpellId);
@@ -6920,7 +6884,7 @@ void Player::CastItemCombatSpell(Unit* Target, WeaponAttackType attType)
             if (pEnchant->type[s] != ITEM_ENCHANTMENT_TYPE_COMBAT_SPELL)
                 continue;
 
-            SpellEntry const* spellInfo = sSpellStore.LookupEntry(proc_spell_id);
+            SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(proc_spell_id);
             if (!spellInfo)
             {
                 sLog.outError("Player::CastItemCombatSpell Enchant %i, cast unknown spell %i", pEnchant->ID, proc_spell_id);
@@ -6968,7 +6932,7 @@ void Player::CastItemUseSpell(Item* item, SpellCastTargets const& targets)
         if (spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE && spellData.SpellTrigger != ITEM_SPELLTRIGGER_ON_NO_DELAY_USE)
             continue;
 
-        SpellEntry const* spellInfo = sSpellStore.LookupEntry(spellData.SpellId);
+        SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellData.SpellId);
         if (!spellInfo)
         {
             sLog.outError("Player::CastItemUseSpell: Item (Entry: %u) in have wrong spell id %u, ignoring", proto->ItemId, spellData.SpellId);
@@ -7184,7 +7148,7 @@ void Player::RemovedInsignia(Player* looterPlr)
     loot->ShowContentTo(looterPlr);
 }
 
-void Player::SendUpdateWorldState(uint32 Field, uint32 Value)
+void Player::SendUpdateWorldState(uint32 Field, uint32 Value) const
 {
     WorldPacket data(SMSG_UPDATE_WORLD_STATE, 8);
     data << Field;
@@ -7192,7 +7156,7 @@ void Player::SendUpdateWorldState(uint32 Field, uint32 Value)
     GetSession()->SendPacket(data);
 }
 
-void Player::SendInitWorldStates(uint32 zoneid)
+void Player::SendInitWorldStates(uint32 zoneid) const
 {
     // data depends on zoneid/mapid...
     BattleGround* bg = GetBattleGround();
@@ -7247,14 +7211,14 @@ uint32 Player::GetXPRestBonus(uint32 xp)
     return rested_bonus;
 }
 
-void Player::SetBindPoint(ObjectGuid guid)
+void Player::SetBindPoint(ObjectGuid guid) const
 {
     WorldPacket data(SMSG_BINDER_CONFIRM, 8);
     data << ObjectGuid(guid);
     GetSession()->SendPacket(data);
 }
 
-void Player::SendTalentWipeConfirm(ObjectGuid guid)
+void Player::SendTalentWipeConfirm(ObjectGuid guid) const
 {
     WorldPacket data(MSG_TALENT_WIPE_CONFIRM, (8 + 4));
     data << ObjectGuid(guid);
@@ -7262,7 +7226,7 @@ void Player::SendTalentWipeConfirm(ObjectGuid guid)
     GetSession()->SendPacket(data);
 }
 
-void Player::SendPetSkillWipeConfirm()
+void Player::SendPetSkillWipeConfirm() const
 {
     Pet* pet = GetPet();
     if (!pet)
@@ -9501,7 +9465,7 @@ Item* Player::EquipItem(uint16 pos, Item* pItem, bool update)
                 if (getClass() == CLASS_ROGUE)
                     cooldownSpell = SPELL_ID_WEAPON_SWITCH_COOLDOWN_1_0s;
 
-                SpellEntry const* spellProto = sSpellStore.LookupEntry(cooldownSpell);
+                SpellEntry const* spellProto = sSpellTemplate.LookupEntry<SpellEntry>(cooldownSpell);
 
                 if (!spellProto)
                     sLog.outError("Weapon switch cooldown spell %u couldn't be found in Spell.dbc", cooldownSpell);
@@ -10510,7 +10474,7 @@ void Player::SendEquipError(InventoryResult msg, Item* pItem, Item* pItem2, uint
     GetSession()->SendPacket(data);
 }
 
-void Player::SendBuyError(BuyResult msg, Creature* pCreature, uint32 item, uint32 param)
+void Player::SendBuyError(BuyResult msg, Creature* pCreature, uint32 item, uint32 param) const
 {
     DEBUG_LOG("WORLD: Sent SMSG_BUY_FAILED");
     WorldPacket data(SMSG_BUY_FAILED, (8 + 4 + 4 + 1));
@@ -10522,7 +10486,7 @@ void Player::SendBuyError(BuyResult msg, Creature* pCreature, uint32 item, uint3
     GetSession()->SendPacket(data);
 }
 
-void Player::SendSellError(SellResult msg, Creature* pCreature, ObjectGuid itemGuid, uint32 param)
+void Player::SendSellError(SellResult msg, Creature* pCreature, ObjectGuid itemGuid, uint32 param) const
 {
     DEBUG_LOG("WORLD: Sent SMSG_SELL_ITEM");
     WorldPacket data(SMSG_SELL_ITEM, (8 + 8 + (param ? 4 : 0) + 1)); // last check 2.0.10
@@ -10725,6 +10689,13 @@ void Player::ApplyEnchantment(Item* item, EnchantmentSlot slot, bool apply, bool
                 case ITEM_ENCHANTMENT_TYPE_NONE:
                     break;
                 case ITEM_ENCHANTMENT_TYPE_COMBAT_SPELL:
+                    if (SpellModifier* mod = item->GetEnchantmentModifier())
+                    {
+                        if (!apply)
+                            item->SetEnchantmentModifier(nullptr);
+                        else
+                            AddSpellMod(mod, apply);
+                    }
                     // processed in Player::CastItemCombatSpell
                     break;
                 case ITEM_ENCHANTMENT_TYPE_DAMAGE:
@@ -11218,7 +11189,7 @@ void Player::OnGossipSelect(WorldObject* pSource, uint32 gossipListId)
     }
 }
 
-uint32 Player::GetGossipTextId(WorldObject* pSource)
+uint32 Player::GetGossipTextId(WorldObject* pSource) const
 {
     if (!pSource || pSource->GetTypeId() != TYPEID_UNIT)
         return DEFAULT_GOSSIP_MESSAGE;
@@ -11261,7 +11232,7 @@ uint32 Player::GetGossipTextId(uint32 menuId, WorldObject* pSource)
     return textId;
 }
 
-uint32 Player::GetDefaultGossipMenuForSource(WorldObject* pSource)
+uint32 Player::GetDefaultGossipMenuForSource(WorldObject* pSource) const
 {
     if (pSource->GetTypeId() == TYPEID_UNIT)
         return ((Creature*)pSource)->GetCreatureInfo()->GossipMenuId;
@@ -11275,7 +11246,7 @@ uint32 Player::GetDefaultGossipMenuForSource(WorldObject* pSource)
 /***                    QUEST SYSTEM                   ***/
 /*********************************************************/
 
-void Player::PrepareQuestMenu(ObjectGuid guid)
+void Player::PrepareQuestMenu(ObjectGuid guid) const
 {
     QuestRelationsMapBounds rbounds;
     QuestRelationsMapBounds irbounds;
@@ -11342,7 +11313,7 @@ void Player::PrepareQuestMenu(ObjectGuid guid)
     }
 }
 
-void Player::SendPreparedQuest(ObjectGuid guid)
+void Player::SendPreparedQuest(ObjectGuid guid) const
 {
     QuestMenu& questMenu = PlayerTalkClass->GetQuestMenu();
     if (questMenu.Empty())
@@ -11435,7 +11406,7 @@ bool Player::IsCurrentQuest(uint32 quest_id, uint8 completed_or_not) const
     }
 }
 
-Quest const* Player::GetNextQuest(ObjectGuid guid, Quest const* pQuest)
+Quest const* Player::GetNextQuest(ObjectGuid guid, Quest const* pQuest) const
 {
     QuestRelationsMapBounds rbounds;
 
@@ -11475,7 +11446,7 @@ Quest const* Player::GetNextQuest(ObjectGuid guid, Quest const* pQuest)
  */
 bool Player::CanSeeStartQuest(Quest const* pQuest) const
 {
-    if (SatisfyQuestClass(pQuest, false) && SatisfyQuestRace(pQuest, false) && SatisfyQuestSkill(pQuest, false) &&
+    if (SatisfyQuestClass(pQuest, false) && SatisfyQuestRace(pQuest, false) && SatisfyQuestSkill(pQuest, false) && SatisfyQuestCondition(pQuest, false) &&
             SatisfyQuestExclusiveGroup(pQuest, false) && SatisfyQuestReputation(pQuest, false) &&
             SatisfyQuestPreviousQuest(pQuest, false) && SatisfyQuestNextChain(pQuest, false) &&
             SatisfyQuestPrevChain(pQuest, false) &&
@@ -11494,7 +11465,7 @@ bool Player::CanTakeQuest(Quest const* pQuest, bool msg) const
 {
     return SatisfyQuestStatus(pQuest, msg) && SatisfyQuestExclusiveGroup(pQuest, msg) &&
            SatisfyQuestClass(pQuest, msg) && SatisfyQuestRace(pQuest, msg) && SatisfyQuestLevel(pQuest, msg) &&
-           SatisfyQuestSkill(pQuest, msg) && SatisfyQuestReputation(pQuest, msg) &&
+           SatisfyQuestSkill(pQuest, msg) && SatisfyQuestCondition(pQuest, msg) && SatisfyQuestReputation(pQuest, msg) &&
            SatisfyQuestPreviousQuest(pQuest, msg) && SatisfyQuestTimed(pQuest, msg) &&
            SatisfyQuestNextChain(pQuest, msg) && SatisfyQuestPrevChain(pQuest, msg) &&
            pQuest->IsActive();
@@ -11534,7 +11505,7 @@ bool Player::CanCompleteQuest(uint32 quest_id) const
     {
         // a few checks, not all "satisfy" is needed
         if (SatisfyQuestPreviousQuest(qInfo, false) && SatisfyQuestLevel(qInfo, false) &&
-                SatisfyQuestSkill(qInfo, false) && SatisfyQuestRace(qInfo, false) && SatisfyQuestClass(qInfo, false))
+                SatisfyQuestSkill(qInfo, false) && SatisfyQuestCondition(qInfo, false) && SatisfyQuestRace(qInfo, false) && SatisfyQuestClass(qInfo, false))
             return true;
 
         return false;
@@ -11682,7 +11653,7 @@ bool Player::CanRewardQuest(Quest const* pQuest, uint32 reward, bool msg) const
     return true;
 }
 
-void Player::SendPetTameFailure(PetTameFailureReason reason)
+void Player::SendPetTameFailure(PetTameFailureReason reason) const
 {
     WorldPacket data(SMSG_PET_TAME_FAILURE, 1);
     data << uint8(reason);
@@ -11938,7 +11909,7 @@ void Player::RewardQuest(Quest const* pQuest, uint32 reward, Object* questGiver,
 
     if (spellId)
     {
-        if (SpellEntry const* spellProto = sSpellStore.LookupEntry(spellId))
+        if (SpellEntry const* spellProto = sSpellTemplate.LookupEntry<SpellEntry>(spellId))
         {
             Unit* caster = this;
 
@@ -12028,6 +11999,21 @@ bool Player::SatisfyQuestSkill(Quest const* qInfo, bool msg) const
     }
 
     return true;
+}
+
+bool Player::SatisfyQuestCondition(Quest const* qInfo, bool msg) const
+{
+    if (uint32 conditionId = qInfo->GetRequiredCondition())
+    {
+        bool result = sObjectMgr.IsPlayerMeetToCondition(conditionId, this, GetMap(), nullptr, CONDITION_FROM_QUEST);
+
+        if(!result && msg)
+            SendCanTakeQuestResponse(INVALIDREASON_DONT_HAVE_REQ);
+
+        return result;
+    }
+    else
+        return true;
 }
 
 bool Player::SatisfyQuestLevel(Quest const* qInfo, bool msg) const
@@ -12930,7 +12916,7 @@ bool Player::HasQuestForItem(uint32 itemid) const
 }
 
 // Used for quests having some event (explore, escort, "external event") as quest objective.
-void Player::SendQuestCompleteEvent(uint32 quest_id)
+void Player::SendQuestCompleteEvent(uint32 quest_id) const
 {
     if (quest_id)
     {
@@ -12941,7 +12927,7 @@ void Player::SendQuestCompleteEvent(uint32 quest_id)
     }
 }
 
-void Player::SendQuestReward(Quest const* pQuest, uint32 XP)
+void Player::SendQuestReward(Quest const* pQuest, uint32 XP) const
 {
     uint32 questid = pQuest->GetQuestId();
     DEBUG_LOG("WORLD: Sent SMSG_QUESTGIVER_QUEST_COMPLETE quest = %u", questid);
@@ -12971,7 +12957,7 @@ void Player::SendQuestReward(Quest const* pQuest, uint32 XP)
     GetSession()->SendPacket(data);
 }
 
-void Player::SendQuestFailed(uint32 quest_id)
+void Player::SendQuestFailed(uint32 quest_id) const
 {
     if (quest_id)
     {
@@ -12982,7 +12968,7 @@ void Player::SendQuestFailed(uint32 quest_id)
     }
 }
 
-void Player::SendQuestTimerFailed(uint32 quest_id)
+void Player::SendQuestTimerFailed(uint32 quest_id) const
 {
     if (quest_id)
     {
@@ -13001,7 +12987,7 @@ void Player::SendCanTakeQuestResponse(uint32 msg) const
     DEBUG_LOG("WORLD: Sent SMSG_QUESTGIVER_QUEST_INVALID");
 }
 
-void Player::SendQuestConfirmAccept(const Quest* pQuest, Player* pReceiver)
+void Player::SendQuestConfirmAccept(const Quest* pQuest, Player* pReceiver) const
 {
     if (pReceiver)
     {
@@ -13019,7 +13005,7 @@ void Player::SendQuestConfirmAccept(const Quest* pQuest, Player* pReceiver)
     }
 }
 
-void Player::SendPushToPartyResponse(Player* pPlayer, uint32 msg)
+void Player::SendPushToPartyResponse(Player* pPlayer, uint32 msg) const
 {
     if (pPlayer)
     {
@@ -13032,7 +13018,7 @@ void Player::SendPushToPartyResponse(Player* pPlayer, uint32 msg)
     }
 }
 
-void Player::SendQuestUpdateAddItem(Quest const* pQuest, uint32 item_idx, uint32 count)
+void Player::SendQuestUpdateAddItem(Quest const* pQuest, uint32 item_idx, uint32 count) const
 {
     DEBUG_LOG("WORLD: Sent SMSG_QUESTUPDATE_ADD_ITEM");
     WorldPacket data(SMSG_QUESTUPDATE_ADD_ITEM, (4 + 4));
@@ -13064,7 +13050,7 @@ void Player::SendQuestUpdateAddCreatureOrGo(Quest const* pQuest, ObjectGuid guid
         SetQuestSlotCounter(log_slot, creatureOrGO_idx, count);
 }
 
-void Player::SendQuestGiverStatusMultiple()
+void Player::SendQuestGiverStatusMultiple() const
 {
     uint32 count = 0;
 
@@ -13770,7 +13756,7 @@ void Player::_LoadAuras(QueryResult* result, uint32 timediff)
             int32 remaintime = fields[12].GetInt32();
             uint32 effIndexMask = fields[13].GetUInt32();
 
-            SpellEntry const* spellproto = sSpellStore.LookupEntry(spellid);
+            SpellEntry const* spellproto = sSpellTemplate.LookupEntry<SpellEntry>(spellid);
             if (!spellproto)
             {
                 sLog.outError("Unknown spell (spellid %u), ignore.", spellid);
@@ -13819,6 +13805,7 @@ void Player::_LoadAuras(QueryResult* result, uint32 timediff)
                     holder->SetTrackedAuraType(TRACK_AURA_TYPE_NOT_TRACKED);
 
                 AddSpellAuraHolder(holder);
+                holder->SetState(SPELLAURAHOLDER_STATE_READY);
                 DETAIL_LOG("Added auras from spellid %u", spellproto->Id);
             }
             else
@@ -14177,7 +14164,7 @@ void Player::LoadPet()
     if (IsInWorld())
     {
         Pet* pet = new Pet;
-        if (!pet->LoadPetFromDB(this, 0, 0, true))
+        if (!pet->LoadPetFromDB(this, 0, 0, true, 0, true))
             delete pet;
     }
 }
@@ -14818,7 +14805,7 @@ void Player::SaveInventoryAndGoldToDB()
     SaveGoldToDB();
 }
 
-void Player::SaveGoldToDB()
+void Player::SaveGoldToDB() const
 {
     static SqlStatementID updateGold ;
 
@@ -15049,6 +15036,8 @@ void Player::_SaveInventory()
             break;
             case ITEM_UNCHANGED:
                 break;
+            default:
+                throw std::domain_error("Unrecognized item state");
         }
 
         item->SaveToDB();                                   // item have unchanged inventory record and can be save standalone
@@ -15402,7 +15391,7 @@ bool Player::CanSpeak() const
 /***              LOW LEVEL FUNCTIONS:Notifiers        ***/
 /*********************************************************/
 
-void Player::SendAttackSwingNotInRange()
+void Player::SendAttackSwingNotInRange() const
 {
     WorldPacket data(SMSG_ATTACKSWING_NOTINRANGE, 0);
     GetSession()->SendPacket(data);
@@ -15430,43 +15419,43 @@ void Player::SetUInt32ValueInArray(Tokens& tokens, uint16 index, uint32 value)
     tokens[index] = buf;
 }
 
-void Player::SendAttackSwingNotStanding()
+void Player::SendAttackSwingNotStanding() const
 {
     WorldPacket data(SMSG_ATTACKSWING_NOTSTANDING, 0);
     GetSession()->SendPacket(data);
 }
 
-void Player::SendAttackSwingDeadTarget()
+void Player::SendAttackSwingDeadTarget() const
 {
     WorldPacket data(SMSG_ATTACKSWING_DEADTARGET, 0);
     GetSession()->SendPacket(data);
 }
 
-void Player::SendAttackSwingCantAttack()
+void Player::SendAttackSwingCantAttack() const
 {
     WorldPacket data(SMSG_ATTACKSWING_CANT_ATTACK, 0);
     GetSession()->SendPacket(data);
 }
 
-void Player::SendAttackSwingCancelAttack()
+void Player::SendAttackSwingCancelAttack() const
 {
     WorldPacket data(SMSG_CANCEL_COMBAT, 0);
     GetSession()->SendPacket(data);
 }
 
-void Player::SendAttackSwingBadFacingAttack()
+void Player::SendAttackSwingBadFacingAttack() const
 {
     WorldPacket data(SMSG_ATTACKSWING_BADFACING, 0);
     GetSession()->SendPacket(data);
 }
 
-void Player::SendAutoRepeatCancel()
+void Player::SendAutoRepeatCancel() const
 {
     WorldPacket data(SMSG_CANCEL_AUTO_REPEAT, 0);
     GetSession()->SendPacket(data);
 }
 
-void Player::SendExplorationExperience(uint32 Area, uint32 Experience)
+void Player::SendExplorationExperience(uint32 Area, uint32 Experience) const
 {
     WorldPacket data(SMSG_EXPLORATION_EXPERIENCE, 8);
     data << uint32(Area);
@@ -15474,7 +15463,7 @@ void Player::SendExplorationExperience(uint32 Area, uint32 Experience)
     GetSession()->SendPacket(data);
 }
 
-void Player::SendResetFailedNotify(uint32 mapid)
+void Player::SendResetFailedNotify(uint32 mapid) const
 {
     WorldPacket data(SMSG_RESET_FAILED_NOTIFY, 4);
     data << uint32(mapid);
@@ -15524,14 +15513,14 @@ void Player::ResetInstances(InstanceResetMethod method)
     }
 }
 
-void Player::SendResetInstanceSuccess(uint32 MapId)
+void Player::SendResetInstanceSuccess(uint32 MapId) const
 {
     WorldPacket data(SMSG_INSTANCE_RESET, 4);
     data << uint32(MapId);
     GetSession()->SendPacket(data);
 }
 
-void Player::SendResetInstanceFailed(uint32 reason, uint32 MapId)
+void Player::SendResetInstanceFailed(uint32 reason, uint32 MapId) const
 {
     // TODO: find what other fail reasons there are besides players in the instance
     WorldPacket data(SMSG_INSTANCE_RESET_FAILED, 4);
@@ -15572,6 +15561,9 @@ void Player::SetFFAPvP(bool state)
         SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_FFA_PVP);
     else
         RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_FFA_PVP);
+
+    ForceHealAndPowerUpdateInZone();
+    ForceHealthAndPowerUpdate();
 
     if (GetGroup())
         SetGroupUpdateFlag(GROUP_UPDATE_FLAG_STATUS);
@@ -15615,21 +15607,21 @@ Pet* Player::GetMiniPet() const
     return GetMap()->GetPet(m_miniPetGuid);
 }
 
-void Player::Say(const std::string& text, const uint32 language)
+void Player::Say(const std::string& text, const uint32 language) const
 {
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_SAY, text.c_str(), Language(language), GetChatTag(), GetObjectGuid(), GetName());
     SendMessageToSetInRange(data, sWorld.getConfig(CONFIG_FLOAT_LISTEN_RANGE_SAY), true);
 }
 
-void Player::Yell(const std::string& text, const uint32 language)
+void Player::Yell(const std::string& text, const uint32 language) const
 {
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_YELL, text.c_str(), Language(language), GetChatTag(), GetObjectGuid(), GetName());
     SendMessageToSetInRange(data, sWorld.getConfig(CONFIG_FLOAT_LISTEN_RANGE_YELL), true);
 }
 
-void Player::TextEmote(const std::string& text)
+void Player::TextEmote(const std::string& text) const
 {
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_EMOTE, text.c_str(), LANG_UNIVERSAL, GetChatTag(), GetObjectGuid(), GetName());
@@ -15671,7 +15663,7 @@ void Player::Whisper(const std::string& text, uint32 language, ObjectGuid receiv
     }
 }
 
-void Player::PetSpellInitialize()
+void Player::PetSpellInitialize() const
 {
     Pet* pet = GetPet();
 
@@ -15767,7 +15759,7 @@ void Player::PossessSpellInitialize()
     GetSession()->SendPacket(data);
 }
 
-void Player::CharmSpellInitialize()
+void Player::CharmSpellInitialize() const
 {
     Unit* charm = GetCharm();
 
@@ -15821,7 +15813,7 @@ void Player::CharmSpellInitialize()
     GetSession()->SendPacket(data);
 }
 
-void Player::RemovePetActionBar()
+void Player::RemovePetActionBar() const
 {
     WorldPacket data(SMSG_PET_SPELLS, 8);
     data << ObjectGuid();
@@ -15942,7 +15934,7 @@ void Player::ResetSpellModsDueToCanceledSpell(Spell const* spell)
 }
 
 // send Proficiency
-void Player::SendProficiency(ItemClass itemClass, uint32 itemSubclassMask)
+void Player::SendProficiency(ItemClass itemClass, uint32 itemSubclassMask) const
 {
     WorldPacket data(SMSG_SET_PROFICIENCY, 1 + 4);
     data << uint8(itemClass) << uint32(itemSubclassMask);
@@ -16236,7 +16228,7 @@ bool Player::ActivateTaxiPathTo(uint32 taxi_path_id, uint32 spellid /*= 0*/)
     return ActivateTaxiPathTo(nodes, nullptr, spellid);
 }
 
-void Player::ContinueTaxiFlight()
+void Player::ContinueTaxiFlight() const
 {
     uint32 sourceNode = m_taxi.GetTaxiSource();
     if (!sourceNode)
@@ -16299,7 +16291,7 @@ void Player::ProhibitSpellSchool(SpellSchoolMask idSchoolMask, uint32 unTimeMs)
         if (itr->second.state == PLAYERSPELL_REMOVED)
             continue;
         uint32 unSpellId = itr->first;
-        SpellEntry const* spellInfo = sSpellStore.LookupEntry(unSpellId);
+        SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(unSpellId);
         MANGOS_ASSERT(spellInfo);
 
         // Not send cooldown for this spells
@@ -16705,6 +16697,18 @@ void Player::AddSpellAndCategoryCooldowns(SpellEntry const* spellInfo, uint32 it
                     continue;
 
                 AddSpellCooldown(*i_scset, itemId, catrecTime);
+            }
+        }
+
+        ItemSpellCategoryStore::const_iterator i_iscstore = sItemSpellCategoryStore.find(cat);
+        if (i_iscstore != sItemSpellCategoryStore.end())
+        {
+            for (ItemSpellCategorySet::const_iterator i_iscset = i_iscstore->second.begin(); i_iscset != i_iscstore->second.end(); ++i_iscset)
+            {
+                if ((*i_iscset).spellId == spellInfo->Id)              // skip main spell, already handled above
+                    continue;
+
+                AddSpellCooldown((*i_iscset).spellId, (*i_iscset).itemId, catrecTime);
             }
         }
     }
@@ -17121,7 +17125,7 @@ void Player::SendUpdateToOutOfRangeGroupMembers()
         pet->ResetAuraUpdateMask();
 }
 
-void Player::SendTransferAbortedByLockStatus(MapEntry const* mapEntry, AreaLockStatus lockStatus, uint32 miscRequirement)
+void Player::SendTransferAbortedByLockStatus(MapEntry const* mapEntry, AreaLockStatus lockStatus, uint32 miscRequirement) const
 {
     MANGOS_ASSERT(mapEntry);
 
@@ -17251,7 +17255,7 @@ void Player::learnQuestRewardedSpells(Quest const* quest)
     if (!spell_id)
         return;
 
-    SpellEntry const* spellInfo = sSpellStore.LookupEntry(spell_id);
+    SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spell_id);
     if (!spellInfo)
         return;
 
@@ -17279,7 +17283,7 @@ void Player::learnQuestRewardedSpells(Quest const* quest)
         if (!HasSpell(first_spell))
             return;
 
-        SpellEntry const* learnedInfo = sSpellStore.LookupEntry(learned_0);
+        SpellEntry const* learnedInfo = sSpellTemplate.LookupEntry<SpellEntry>(learned_0);
         if (!learnedInfo)
             return;
 
@@ -17292,7 +17296,7 @@ void Player::learnQuestRewardedSpells(Quest const* quest)
                 if (itr->second.state == PLAYERSPELL_REMOVED || itr->first == learned_0)
                     continue;
 
-                SpellEntry const* itrInfo = sSpellStore.LookupEntry(itr->first);
+                SpellEntry const* itrInfo = sSpellTemplate.LookupEntry<SpellEntry>(itr->first);
                 if (!itrInfo)
                     return;
 
@@ -17347,7 +17351,7 @@ void Player::learnSkillRewardedSpells(uint32 skill_id, uint32 skill_value)
         if (pAbility->classmask && !(pAbility->classmask & classMask))
             continue;
 
-        if (sSpellStore.LookupEntry(pAbility->spellId))
+        if (sSpellTemplate.LookupEntry<SpellEntry>(pAbility->spellId))
         {
             // need unlearn spell
             if (skill_value < pAbility->req_skill_value)
@@ -17649,7 +17653,7 @@ void Player::AutoUnequipOffhandIfNeed()
     }
 }
 
-bool Player::HasItemFitToSpellReqirements(SpellEntry const* spellInfo, Item const* ignoreItem)
+bool Player::HasItemFitToSpellReqirements(SpellEntry const* spellInfo, Item const* ignoreItem) const
 {
     if (spellInfo->EquippedItemClass < 0)
         return true;
@@ -17738,7 +17742,7 @@ void Player::RemoveItemDependentAurasAndCasts(Item* pItem)
                 InterruptSpell(CurrentSpellTypes(i));
 }
 
-uint32 Player::GetResurrectionSpellId()
+uint32 Player::GetResurrectionSpellId() const
 {
     // search priceless resurrection possibilities
     uint32 prio = 0;
@@ -17942,7 +17946,7 @@ bool Player::IsClientControl(Unit* target) const
             target->GetCharmerOrOwnerOrOwnGuid() == GetObjectGuid());
 }
 
-void Player::SetClientControl(Unit* target, uint8 allowMove)
+void Player::SetClientControl(Unit* target, uint8 allowMove) const
 {
     WorldPacket data(SMSG_CLIENT_CONTROL_UPDATE, target->GetPackGUID().size() + 1);
     data << target->GetPackGUID();
@@ -18032,7 +18036,7 @@ void Player::UpdateCorpseReclaimDelay()
         m_deathExpireTime = now + DEATH_EXPIRE_STEP;
 }
 
-void Player::SendCorpseReclaimDelay(bool load)
+void Player::SendCorpseReclaimDelay(bool load) const
 {
     Corpse* corpse = GetCorpse();
     if (!corpse)
@@ -18233,24 +18237,6 @@ void Player::UpdateUnderwaterState(Map* m, float x, float y, float z)
     }
 }
 
-void Player::SetCanParry(bool value)
-{
-    if (m_canParry == value)
-        return;
-
-    m_canParry = value;
-    UpdateParryPercentage();
-}
-
-void Player::SetCanBlock(bool value)
-{
-    if (m_canBlock == value)
-        return;
-
-    m_canBlock = value;
-    UpdateBlockPercentage();
-}
-
 bool ItemPosCount::isContainedIn(ItemPosCountVec const& vec) const
 {
     for (ItemPosCountVec::const_iterator itr = vec.begin(); itr != vec.end(); ++itr)
@@ -18271,7 +18257,7 @@ bool Player::CanUseBattleGroundObject()
             !isTotalImmune());                              // vulnerable (not immune)
 }
 
-bool Player::isTotalImmune()
+bool Player::isTotalImmune() const
 {
     AuraList const& immune = GetAurasByType(SPELL_AURA_SCHOOL_IMMUNITY);
 
@@ -18725,7 +18711,7 @@ void Player::RemoveAtLoginFlag(AtLoginFlags f, bool in_db_also /*= false*/)
         CharacterDatabase.PExecute("UPDATE characters set at_login = at_login & ~ %u WHERE guid ='%u'", uint32(f), GetGUIDLow());
 }
 
-void Player::SendClearCooldown(uint32 spell_id, Unit* target)
+void Player::SendClearCooldown(uint32 spell_id, Unit* target) const
 {
     WorldPacket data(SMSG_CLEAR_COOLDOWN, 4 + 8);
     data << uint32(spell_id);
@@ -18825,7 +18811,7 @@ void Player::SetRestType(RestType n_r_type, uint32 areaTriggerId /*= 0*/)
     }
 }
 
-void Player::SendDuelCountdown(uint32 counter)
+void Player::SendDuelCountdown(uint32 counter) const
 {
     WorldPacket data(SMSG_DUEL_COUNTDOWN, 4);
     data << uint32(counter);                                // seconds
@@ -18933,7 +18919,7 @@ AreaLockStatus Player::GetAreaTriggerLockStatus(AreaTrigger const* at, uint32& m
     return AREA_LOCKSTATUS_OK;
 };
 
-float Player::ComputeRest(time_t timePassed, bool offline /*= false*/, bool inRestPlace /*= false*/)
+float Player::ComputeRest(time_t timePassed, bool offline /*= false*/, bool inRestPlace /*= false*/) const
 {
     // Every 8h in resting zone we gain a bubble
     // A bubble is 5% of the total xp so there is 20 bubbles
@@ -18968,4 +18954,16 @@ void Player::DoInteraction(ObjectGuid const& interactObjGuid)
         RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_USE);
     }
     SendForcedObjectUpdate();
+}
+
+void Player::ForceHealAndPowerUpdateInZone()
+{
+    for (auto guid : m_clientGUIDs)
+    {
+        if (guid.IsUnit())
+        {
+            if (auto unit = GetMap()->GetUnit(guid))
+                unit->ForceHealthAndPowerUpdate();
+        }
+    }
 }

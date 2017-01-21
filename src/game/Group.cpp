@@ -491,7 +491,7 @@ void Group::GetDataForXPAtKill(Unit const* victim, uint32& count, uint32& sum_le
     }
 }
 
-void Group::SendTargetIconList(WorldSession* session)
+void Group::SendTargetIconList(WorldSession* session) const
 {
     if (!session)
         return;
@@ -706,6 +706,17 @@ bool Group::_addMember(ObjectGuid guid, const char* name, bool isAssistant, uint
                 if (bind->state->GetInstanceId() == player->GetInstanceId())
                     player->m_InstanceValid = true;
         }
+
+        if (player->IsFFAPvP())
+        {
+            player->ForceHealthAndPowerUpdate();
+            for (GroupReference* itr = GetFirstMember(); itr != nullptr; itr = itr->next())
+            {
+                Player* groupMember = itr->getSource();
+                if (groupMember && groupMember->GetSession())
+                    groupMember->ForceHealthAndPowerUpdate();
+            }
+        }
     }
 
     if (!isRaidGroup())                                     // reset targetIcons for non-raid-groups
@@ -870,7 +881,7 @@ void Group::_setLeader(ObjectGuid guid)
     _updateLeaderFlag();
 }
 
-void Group::_updateLeaderFlag(const bool remove /*= false*/)
+void Group::_updateLeaderFlag(bool remove /*= false*/) const
 {
     if (Player* player = sObjectMgr.GetPlayer(m_leaderGuid))
         player->UpdateGroupLeaderFlag(remove);
@@ -1188,7 +1199,7 @@ void Group::UnbindInstance(uint32 mapid, bool unload)
     }
 }
 
-void Group::_homebindIfInstance(Player* player)
+void Group::_homebindIfInstance(Player* player) const
 {
     if (player && !player->isGameMaster())
     {
