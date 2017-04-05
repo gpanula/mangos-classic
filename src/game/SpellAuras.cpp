@@ -526,8 +526,10 @@ void AreaAura::Update(uint32 diff)
                     holder->SetInUse(false);
                 }
                 else
-                    (*tIter)->AddSpellAuraHolder(holder);
-
+                    if ((*tIter)->AddSpellAuraHolder(holder))
+                        holder->SetState(SPELLAURAHOLDER_STATE_READY);
+                    else
+                        delete holder;
             }
         }
         Aura::Update(diff);
@@ -3273,10 +3275,14 @@ void Aura::HandleAuraModIncreaseHealth(bool apply, bool Real)
                 }
                 else
                 {
-                    if (int32(target->GetHealth()) > m_modifier.m_amount)
-                        target->ModifyHealth(-m_modifier.m_amount);
-                    else
-                        target->SetHealth(1);
+                    if (m_removeMode != AURA_REMOVE_BY_DEATH)
+                    {
+                        if (int32(target->GetHealth()) > m_modifier.m_amount)
+                            target->ModifyHealth(-m_modifier.m_amount);
+                        else
+                            target->SetHealth(1);
+                    }
+
                     target->HandleStatModifier(UNIT_MOD_HEALTH, TOTAL_VALUE, float(m_modifier.m_amount), apply);
                 }
             }

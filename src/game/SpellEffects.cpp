@@ -728,6 +728,13 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
 
                     return;
                 }
+                case 21108:                                 // Summon Sons of Flame
+                {
+                    // Trigger the eight summoning spells for the adds in Ragnaros encounter
+                    for (const uint32 spell : {21110, 21111, 21112, 21113, 21114, 21115, 21116, 21117})
+                        m_caster->CastSpell(m_caster, spell, TRIGGERED_OLD_TRIGGERED, nullptr);
+                    return;
+                }
                 case 21147:                                 // Arcane Vacuum
                 {
                     if (unitTarget)
@@ -742,6 +749,13 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                     }
 
                     return;
+                }
+                case 21908:                                 // Lava Burst Randomizer
+                {
+                    // randomly cast one of the nine Lava Burst spell A to I in Ragnaros encounter
+                    const uint32 spell_list[9] = {21886, 21900, 21901, 21902, 21903, 21904, 21905, 21906, 21907};
+                    m_caster->CastSpell(m_caster, spell_list[urand(0, 8)], TRIGGERED_OLD_TRIGGERED);
+                  return;
                 }
                 case 23019:                                 // Crystal Prison Dummy DND
                 {
@@ -946,7 +960,7 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                         SpellModifier* mod = new SpellModifier(SPELLMOD_RESIST_MISS_CHANCE, SPELLMOD_FLAT, damage, m_spellInfo->Id, uint64(0x0000000000000100));
                         ((Player*)unitTarget)->AddSpellMod(mod, true);
                     }
-                    
+
                     break;
                 }
                 case 12472:                                 // Cold Snap
@@ -1498,7 +1512,7 @@ void Spell::EffectTeleportUnits(SpellEffectIndex eff_idx)   // TODO - Use target
     // post effects for TARGET_TABLE_X_Y_Z_COORDINATES
     switch (m_spellInfo->Id)
     {
-        case 23441:                                 // Ultrasafe Transporter: Gadgetzan 
+        case 23441:                                 // Ultrasafe Transporter: Gadgetzan
         {
             // Wrong destination already rolled for, only handle minor malfunction on sucess
             m_caster->CastSpell(m_caster, 23450, TRIGGERED_OLD_TRIGGERED); // Transporter Arrival
@@ -2744,8 +2758,14 @@ void Spell::EffectTeleUnitsFaceCaster(SpellEffectIndex eff_idx)
         m_targets.getDestination(fx, fy, fz);
     else
     {
-        float dis = GetSpellRadius(sSpellRadiusStore.LookupEntry(m_spellInfo->EffectRadiusIndex[eff_idx]));
-        m_caster->GetClosePoint(fx, fy, fz, unitTarget->GetObjectBoundingRadius(), dis);
+        if (float dis = GetSpellRadius(sSpellRadiusStore.LookupEntry(m_spellInfo->EffectRadiusIndex[eff_idx])))
+            m_caster->GetClosePoint(fx, fy, fz, unitTarget->GetObjectBoundingRadius(), dis);
+        else
+        {
+            fx = m_caster->GetPositionX();
+            fy = m_caster->GetPositionY();
+            fz = m_caster->GetPositionZ();
+        }
     }
 
     unitTarget->NearTeleportTo(fx, fy, fz, -m_caster->GetOrientation(), unitTarget == m_caster);
@@ -2863,7 +2883,7 @@ void Spell::EffectEnchantItemTmp(SpellEffectIndex eff_idx)
     else if (m_spellInfo->SpellIconID == 241 && m_spellInfo->Id != 7434)
         duration = 3600;                                    // 1 hour
     // Consecrated Weapon and Blessed Wizard Oil
-    else if (m_spellInfo->Id == 28891 && m_spellInfo->Id == 28898)
+    else if (m_spellInfo->Id == 28891 || m_spellInfo->Id == 28898)
         duration = 3600;                                    // 1 hour
     // some fishing pole bonuses
     else if (m_spellInfo->HasAttribute(SPELL_ATTR_HIDDEN_CLIENTSIDE))
@@ -4460,7 +4480,7 @@ void Spell::EffectLeapForward(SpellEffectIndex eff_idx)
         return;
 
     float x, y, z;
-    m_targets.getDestination(x, y, z);   
+    m_targets.getDestination(x, y, z);
 
     float orientation = unitTarget->GetOrientation();
 
@@ -4731,7 +4751,7 @@ void Spell::EffectSummonDeadPet(SpellEffectIndex /*eff_idx*/)
     if (!pet)
     {
         pet = new Pet();
-        if (!pet->LoadPetFromDB(_player, 0, 0, true, damage))
+        if (!pet->LoadPetFromDB(_player, 0, 0, false, damage))
             delete pet;
         // if above successfully loaded the pet all is done
         return;

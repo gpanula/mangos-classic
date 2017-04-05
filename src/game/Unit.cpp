@@ -194,7 +194,7 @@ static inline SpellPartialResistDistribution InitSpellPartialResistDistribution(
                 const uint32 upcoming = ahead.at(column);
                 const int64 diff = (int64(upcoming) - base);
                 // Use bigger types signed math to avoid potential erratic behavior on some compilers...
-                values[column] = uint32(std::max(0.0, (base + std::round(diff * (intermediate / double(100.0))))));
+                values[column] = uint32(std::max(0.0, (base + ::round(diff * (intermediate / double(100.0))))));
             }
         }
     }
@@ -1186,6 +1186,8 @@ void Unit::JustKilledCreature(Creature* victim, Player* responsiblePlayer)
                 if (save->GetResetTime() < resettime)
                     save->SetResetTime(resettime);
             }
+
+            ((DungeonMap*)m)->GetPersistanceState()->UpdateEncounterState(ENCOUNTER_CREDIT_KILL_CREATURE, victim->GetEntry());
         }
     }
 
@@ -2882,7 +2884,7 @@ float Unit::CalculateAbilityDeflectChance(const Unit *attacker, const SpellEntry
 
 bool Unit::RollAbilityPartialBlockOutcome(const Unit *attacker, WeaponAttackType attType, const SpellEntry *ability) const
 {
-    if (CanBlockAbility(attacker, ability))
+    if (!CanBlockAbility(attacker, ability))
         return false;
     const float chance = CalculateEffectiveBlockChance(attacker, attType, ability);
     return roll_chance_combat(chance);
@@ -3945,7 +3947,6 @@ bool Unit::AddSpellAuraHolder(SpellAuraHolder* holder)
         !IsDeathOnlySpell(aurSpellInfo) && !aurSpellInfo->HasAttribute(SPELL_ATTR_EX2_CAN_TARGET_DEAD) &&
         (GetTypeId() != TYPEID_PLAYER || !((Player*)this)->GetSession()->PlayerLoading()))
     {
-        delete holder;
         return false;
     }
 
@@ -3954,7 +3955,6 @@ bool Unit::AddSpellAuraHolder(SpellAuraHolder* holder)
         sLog.outError("Holder (spell %u) add to spell aura holder list of %s (lowguid: %u) but spell aura holder target is %s (lowguid: %u)",
                       holder->GetId(), (GetTypeId() == TYPEID_PLAYER ? "player" : "creature"), GetGUIDLow(),
                       (holder->GetTarget()->GetTypeId() == TYPEID_PLAYER ? "player" : "creature"), holder->GetTarget()->GetGUIDLow());
-        delete holder;
         return false;
     }
 
@@ -3974,7 +3974,6 @@ bool Unit::AddSpellAuraHolder(SpellAuraHolder* holder)
                 {
                     // can be created with >1 stack by some spell mods
                     foundHolder->ModStackAmount(holder->GetStackAmount());
-                    delete holder;
                     return false;
                 }
 
@@ -3992,16 +3991,12 @@ bool Unit::AddSpellAuraHolder(SpellAuraHolder* holder)
                 if (aurSpellInfo->StackAmount && aurSpellInfo->rangeIndex != SPELL_RANGE_IDX_SELF_ONLY && !aurSpellInfo->HasAttribute(SPELL_ATTR_EX3_STACK_FOR_DIFF_CASTERS))
                 {
                     foundHolder->ModStackAmount(holder->GetStackAmount());
-                    delete holder;
                     return false;
                 }
-                else
+                else if (!IsStackableSpell(aurSpellInfo, foundHolder->GetSpellProto(), holder->GetTarget()))
                 {
-                    if (!IsStackableSpell(holder->GetSpellProto(), foundHolder->GetSpellProto(), holder->GetTarget()))
-                    {
-                        RemoveSpellAuraHolder(foundHolder, AURA_REMOVE_BY_STACK);
-                        break;
-                    }
+                    RemoveSpellAuraHolder(foundHolder, AURA_REMOVE_BY_STACK);
+                    break;
                 }
             }
         }
@@ -4012,7 +4007,6 @@ bool Unit::AddSpellAuraHolder(SpellAuraHolder* holder)
     {
         if (!RemoveNoStackAurasDueToAuraHolder(holder))
         {
-            delete holder;
             return false;                                   // couldn't remove conflicting aura with higher rank
         }
     }
@@ -4089,10 +4083,8 @@ bool Unit::AddSpellAuraHolder(SpellAuraHolder* holder)
 
     // if aura deleted before boosts apply ignore
     // this can be possible it it removed indirectly by triggered spell effect at ApplyModifier
-    if (holder->IsDeleted())
-        return false;
-
-    holder->HandleSpellSpecificBoosts(true);
+    if (!holder->IsDeleted())
+        holder->HandleSpellSpecificBoosts(true);
 
     return true;
 }
@@ -4326,7 +4318,8 @@ void Unit::RemoveAurasDueToSpellBySteal(uint32 spellId, ObjectGuid casterGuid, U
     // strange but intended behaviour: Stolen single target auras won't be treated as single targeted
     new_holder->SetTrackedAuraType(TRACK_AURA_TYPE_NOT_TRACKED);
 
-    stealer->AddSpellAuraHolder(new_holder);
+    if (!stealer->AddSpellAuraHolder(new_holder))
+        delete new_holder;
 }
 
 void Unit::RemoveAurasDueToSpellByCancel(uint32 spellId)
@@ -8689,7 +8682,7 @@ void Unit::ProcDamageAndSpellFor(bool isVictim, Unit* pTarget, uint32 procFlag, 
         if (GetTypeId() == TYPEID_PLAYER)
         {
             // On melee based hit/miss/resist need update skill (for victim and attacker)
-            if (procExtra & (PROC_EX_NORMAL_HIT | PROC_EX_MISS | PROC_EX_RESIST))
+            if (procExtra & (PROC_EX_NORMAL_HIT | PROC_EX_CRITICAL_HIT | PROC_EX_MISS | PROC_EX_DODGE | PROC_EX_PARRY | PROC_EX_BLOCK))
             {
                 if (pTarget->GetTypeId() != TYPEID_PLAYER && pTarget->GetCreatureType() != CREATURE_TYPE_CRITTER)
                     ((Player*)this)->UpdateCombatSkills(pTarget, attType, isVictim);

@@ -444,8 +444,17 @@ void Pet::SavePetToDB(PetSaveMode mode)
         uint32 curpower = GetPower(GetPowerType());
 
         // stable and not in slot saves
-        if (mode != PET_SAVE_AS_CURRENT && getPetType() != HUNTER_PET)
-            RemoveAllAuras();
+        if (mode == PET_SAVE_AS_CURRENT)
+        {
+            // pet is dead so it doesn't have to be shown at character login
+            if (!isAlive())
+                mode = PET_SAVE_NOT_IN_SLOT;
+        }
+        else
+        {
+            if (getPetType() != HUNTER_PET)
+                RemoveAllAuras();
+        }
 
         // save pet's data as one single transaction
         CharacterDatabase.BeginTransaction();
@@ -622,7 +631,8 @@ void Pet::Update(uint32 update_diff, uint32 diff)
         {
             if (m_corpseDecayTimer <= update_diff)
             {
-                Unsummon(getPetType() != SUMMON_PET ? PET_SAVE_AS_CURRENT : PET_SAVE_NOT_IN_SLOT);
+                // pet is dead so it doesn't have to be shown at character login
+                Unsummon(PET_SAVE_NOT_IN_SLOT);
                 return;
             }
             break;
@@ -1639,8 +1649,22 @@ void Pet::_LoadAuras(uint32 timediff)
                 holder->AddAura(aura, SpellEffectIndex(i));
             }
 
-            if (!holder->IsEmptyHolder())
-                AddSpellAuraHolder(holder);
+            const bool empty = holder->IsEmptyHolder();
+            if (!empty)
+            {
+                // reset stolen single target auras
+                if (casterGuid != GetObjectGuid() && holder->GetTrackedAuraType() == TRACK_AURA_TYPE_SINGLE_TARGET)
+                    holder->SetTrackedAuraType(TRACK_AURA_TYPE_NOT_TRACKED);
+
+                // FIXME: commits related to SPELLAURAHOLDER_STATE_DB_LOAD need to be backported from tbc+
+                // holder->SetState(SPELLAURAHOLDER_STATE_DB_LOAD); // Safeguard mechanism against some actions
+            }
+
+            if (!empty && AddSpellAuraHolder(holder))
+            {
+                holder->SetState(SPELLAURAHOLDER_STATE_READY);
+                DETAIL_LOG("Added pet auras from spellid %u", spellproto->Id);
+            }
             else
                 delete holder;
         }
