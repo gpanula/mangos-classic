@@ -30,22 +30,30 @@ enum
 {
     AREATRIGGER_ENTER_UBRS      = 2046,
     AREATRIGGER_STADIUM         = 2026,
+    AREATRIGGER_BEAST_AGGRO     = 2066,
+    AREATRIGGER_BEAST_INTRO     = 2067,
 
-    // Arena event dialogue - handled by instance
+    // Arena event dialogue intro and outro - handled by instance
     SAY_NEFARIUS_INTRO_1        = -1229004,
     SAY_NEFARIUS_INTRO_2        = -1229005,
-    SAY_NEFARIUS_ATTACK_1       = -1229006,
-    SAY_REND_JOIN               = -1229007,
-    SAY_NEFARIUS_ATTACK_2       = -1229008,
-    SAY_NEFARIUS_ATTACK_3       = -1229009,
-    SAY_NEFARIUS_ATTACK_4       = -1229010,
-    SAY_REND_LOSE_1             = -1229011,
-    SAY_REND_LOSE_2             = -1229012,
-    SAY_NEFARIUS_LOSE_3         = -1229013,
-    SAY_NEFARIUS_LOSE_4         = -1229014,
+    SAY_NEFARIUS_LOSE1          = -1229014,
     SAY_REND_ATTACK             = -1229015,
     SAY_NEFARIUS_WARCHIEF       = -1229016,
     SAY_NEFARIUS_VICTORY        = -1229018,
+
+    // Arena event random taunt - handled on creature death
+    SAY_NEFARIUS_TAUNT1         = -1229006,
+    SAY_NEFARIUS_TAUNT2         = -1229008,
+    SAY_NEFARIUS_TAUNT3         = -1229009,
+    SAY_NEFARIUS_TAUNT4         = -1229010,
+    SAY_NEFARIUS_TAUNT5         = -1229013,
+    SAY_NEFARIUS_TAUNT6         = -1229021,
+    SAY_NEFARIUS_TAUNT7         = -1229022,
+    SAY_NEFARIUS_TAUNT8         = -1229023,
+    SAY_REND_TAUNT1             = -1229007,
+    SAY_REND_TAUNT2             = -1229011,
+    SAY_REND_TAUNT3             = -1229012,
+    SAY_REND_TAUNT4             = -1229024,
 
     // Emberseer event
     EMOTE_BEGIN                 = -1229000,
@@ -80,7 +88,7 @@ static const DialogueEntry aStadiumDialogue[] =
     {SAY_NEFARIUS_INTRO_1,      NPC_LORD_VICTOR_NEFARIUS,   7000},
     {SAY_NEFARIUS_INTRO_2,      NPC_LORD_VICTOR_NEFARIUS,   5000},
     {NPC_BLACKHAND_HANDLER,     0,                          0},
-    {SAY_NEFARIUS_LOSE_4,       NPC_LORD_VICTOR_NEFARIUS,   3000},
+    {SAY_NEFARIUS_LOSE1 ,       NPC_LORD_VICTOR_NEFARIUS,   3000},
     {SAY_REND_ATTACK,           NPC_REND_BLACKHAND,         2000},
     {SAY_NEFARIUS_WARCHIEF,     NPC_LORD_VICTOR_NEFARIUS,   0},
     {SAY_NEFARIUS_VICTORY,      NPC_LORD_VICTOR_NEFARIUS,   5000},
@@ -98,7 +106,9 @@ instance_blackrock_spire::instance_blackrock_spire(Map* pMap) : ScriptedInstance
     m_uiFlamewreathWaveCount(0),
     m_uiStadiumEventTimer(0),
     m_uiStadiumWaves(0),
-    m_uiStadiumMobsAlive(0)
+    m_uiStadiumMobsAlive(0),
+    m_bBeastIntroDone(false),
+    m_bBeastOutOfLair(false)
 {
     Initialize();
 }
@@ -178,6 +188,7 @@ void instance_blackrock_spire::OnCreatureCreate(Creature* pCreature)
         case NPC_GYTH:
         case NPC_REND_BLACKHAND:
         case NPC_SCARSHIELD_INFILTRATOR:
+        case NPC_THE_BEAST:
             m_mNpcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
             break;
 
@@ -211,7 +222,7 @@ void instance_blackrock_spire::SetData(uint32 uiType, uint32 uiData)
                     {
                         if (!pIncarcerator->isAlive())
                             pIncarcerator->Respawn();
-                        pIncarcerator->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PASSIVE);
+                        pIncarcerator->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
                     }
                 }
 
@@ -387,6 +398,40 @@ void instance_blackrock_spire::OnCreatureDeath(Creature* pCreature)
             // check if it's summoned - some npcs with the same entry are already spawned in the instance
             if (!pCreature->IsTemporarySummon())
                 break;
+
+            // 5% chance for Rend or Lord Victor Nefarius to taunt players when one of the creature is killed (% is guesswork)
+            // Lord Victor Nefarius
+            if (urand(0, 100) < 5)
+            {
+                if (Creature* pNefarius = GetSingleCreatureFromStorage(NPC_LORD_VICTOR_NEFARIUS))
+                {
+                    switch (urand(0, 7))
+                    {
+                        case 0: DoScriptText(SAY_NEFARIUS_TAUNT1, pNefarius); break;
+                        case 1: DoScriptText(SAY_NEFARIUS_TAUNT2, pNefarius); break;
+                        case 2: DoScriptText(SAY_NEFARIUS_TAUNT3, pNefarius); break;
+                        case 3: DoScriptText(SAY_NEFARIUS_TAUNT4, pNefarius); break;
+                        case 4: DoScriptText(SAY_NEFARIUS_TAUNT5, pNefarius); break;
+                        case 5: DoScriptText(SAY_NEFARIUS_TAUNT6, pNefarius); break;
+                        case 6: DoScriptText(SAY_NEFARIUS_TAUNT7, pNefarius); break;
+                        case 7: DoScriptText(SAY_NEFARIUS_TAUNT8, pNefarius); break;
+                    }
+                }
+            }
+            // Warchief Rend Blackhand
+            if (urand(0, 100) < 5)
+            {
+                if (Creature* pRend = GetSingleCreatureFromStorage(NPC_REND_BLACKHAND))
+                {
+                    switch (urand(0, 3))
+                    {
+                        case 0: DoScriptText(SAY_REND_TAUNT1, pRend); break;
+                        case 1: DoScriptText(SAY_REND_TAUNT2, pRend); break;
+                        case 2: DoScriptText(SAY_REND_TAUNT3, pRend); break;
+                        case 3: DoScriptText(SAY_REND_TAUNT4, pRend); break;
+                    }
+                }
+            }
             --m_uiStadiumMobsAlive;
             if (m_uiStadiumMobsAlive == 0)
                 DoSendNextStadiumWave();
@@ -488,7 +533,7 @@ void instance_blackrock_spire::DoProcessEmberseerEvent()
             if (pCreature->isAlive())
             {
                 pCreature->InterruptNonMeleeSpells(false);
-                pCreature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PASSIVE);
+                pCreature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
             }
         }
     }
@@ -526,7 +571,7 @@ void instance_blackrock_spire::JustDidDialogueStep(int32 iEntry)
                 // Summon the spectators and move them to the western balcony
                 for (uint8 i = 0; i <12; i++)
                 {
-                    Creature* pSpectator = pNefarius->SummonCreature(aStadiumSpectators[i], aSpectatorsSpawnLocs[i].m_fX, aSpectatorsSpawnLocs[i].m_fY, aSpectatorsSpawnLocs[i].m_fZ, aSpectatorsSpawnLocs[i].m_fO, TEMPSUMMON_DEAD_DESPAWN, 0);
+                    Creature* pSpectator = pNefarius->SummonCreature(aStadiumSpectators[i], aSpectatorsSpawnLocs[i].m_fX, aSpectatorsSpawnLocs[i].m_fY, aSpectatorsSpawnLocs[i].m_fZ, aSpectatorsSpawnLocs[i].m_fO, TEMPSPAWN_DEAD_DESPAWN, 0);
                     if (pSpectator)
                     {
                         pSpectator->SetFacingTo(aSpectatorsTargetLocs[i].m_fO);
@@ -538,13 +583,16 @@ void instance_blackrock_spire::JustDidDialogueStep(int32 iEntry)
             }
             break;
         case SAY_NEFARIUS_WARCHIEF:
-            // Prepare for Gyth - note: Nefarius should be moving around the balcony
+            // Prepare for Gyth
             if (Creature* pRend = GetSingleCreatureFromStorage(NPC_REND_BLACKHAND))
             {
                 pRend->ForcedDespawn(5000);
                 pRend->SetWalk(false);
                 pRend->GetMotionMaster()->MovePoint(0, aStadiumLocs[6].m_fX, aStadiumLocs[6].m_fY, aStadiumLocs[6].m_fZ);
             }
+            // Make Lord Nefarius walk back and forth while Rend is preparing Glyth
+            if (Creature* pNefarius = GetSingleCreatureFromStorage(NPC_LORD_VICTOR_NEFARIUS))
+                pNefarius->GetMotionMaster()->MoveWaypoint(0);
             m_uiStadiumEventTimer = 30000;
             break;
         case SAY_NEFARIUS_VICTORY:
@@ -576,7 +624,7 @@ void instance_blackrock_spire::DoSendNextStadiumWave()
 
                 pNefarius->GetRandomPoint(aStadiumLocs[0].m_fX, aStadiumLocs[0].m_fY, aStadiumLocs[0].m_fZ, 7.0f, fX, fY, fZ);
                 fX = std::min(aStadiumLocs[0].m_fX, fX);    // Halfcircle - suits better the rectangular form
-                if (Creature* pTemp = pNefarius->SummonCreature(aStadiumEventNpcs[m_uiStadiumWaves][i], fX, fY, fZ, 0.0f, TEMPSUMMON_DEAD_DESPAWN, 0))
+                if (Creature* pTemp = pNefarius->SummonCreature(aStadiumEventNpcs[m_uiStadiumWaves][i], fX, fY, fZ, 0.0f, TEMPSPAWN_DEAD_DESPAWN, 0))
                 {
                     // Get some point in the center of the stadium
                     pTemp->GetRandomPoint(aStadiumLocs[2].m_fX, aStadiumLocs[2].m_fY, aStadiumLocs[2].m_fZ, 5.0f, fX, fY, fZ);
@@ -592,13 +640,17 @@ void instance_blackrock_spire::DoSendNextStadiumWave()
     }
     // All waves are cleared - start Gyth intro
     else if (m_uiStadiumWaves == MAX_STADIUM_WAVES)
-        StartNextDialogueText(SAY_NEFARIUS_LOSE_4);
+        StartNextDialogueText(SAY_NEFARIUS_LOSE1);
     else
     {
         // Send Gyth
         if (Creature* pNefarius = GetSingleCreatureFromStorage(NPC_LORD_VICTOR_NEFARIUS))
         {
-            if (Creature* pTemp = pNefarius->SummonCreature(NPC_GYTH, aStadiumLocs[1].m_fX, aStadiumLocs[1].m_fY, aStadiumLocs[1].m_fZ, 0.0f, TEMPSUMMON_DEAD_DESPAWN, 0))
+            // Stop Lord Nefarius from moving and put him back in place
+            pNefarius->GetMotionMaster()->MoveIdle();
+            pNefarius->GetMotionMaster()->MovePoint(0, aStadiumLocs[5].m_fX, aStadiumLocs[5].m_fY, aStadiumLocs[5].m_fZ);
+
+            if (Creature* pTemp = pNefarius->SummonCreature(NPC_GYTH, aStadiumLocs[1].m_fX, aStadiumLocs[1].m_fY, aStadiumLocs[1].m_fZ, 0.0f, TEMPSPAWN_DEAD_DESPAWN, 0))
                 pTemp->GetMotionMaster()->MovePoint(0, aStadiumLocs[2].m_fX, aStadiumLocs[2].m_fY, aStadiumLocs[2].m_fZ);
         }
 
@@ -633,7 +685,7 @@ void instance_blackrock_spire::DoSendNextFlamewreathWave()
             float fX, fY, fZ;
             pSummoner->GetRandomPoint(rookeryEventSpawnPos[0], rookeryEventSpawnPos[1], rookeryEventSpawnPos[2], 2.5f, fX, fY, fZ);
             // Summon Rookery Hatchers in first wave, else random
-            pSummoned = pSummoner->SummonCreature(urand(0, 1) && m_uiFlamewreathWaveCount ? NPC_ROOKERY_GUARDIAN : NPC_ROOKERY_HATCHER, fX, fY, fZ, 0.0, TEMPSUMMON_TIMED_OOC_OR_DEAD_DESPAWN, 300000);
+            pSummoned = pSummoner->SummonCreature(urand(0, 1) && m_uiFlamewreathWaveCount ? NPC_ROOKERY_GUARDIAN : NPC_ROOKERY_HATCHER, fX, fY, fZ, 0.0, TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, 300000);
             if (pSummoned)
             {
                 pSummoner->GetContactPoint(pSummoned, fX, fY, fZ);
@@ -654,7 +706,7 @@ void instance_blackrock_spire::DoSendNextFlamewreathWave()
     }
     else                                                    // Send Flamewreath
     {
-        if (Creature* pSolakar = pSummoner->SummonCreature(NPC_SOLAKAR_FLAMEWREATH, rookeryEventSpawnPos[0], rookeryEventSpawnPos[1], rookeryEventSpawnPos[2], 0.0f, TEMPSUMMON_TIMED_OOC_OR_DEAD_DESPAWN, HOUR * IN_MILLISECONDS))
+        if (Creature* pSolakar = pSummoner->SummonCreature(NPC_SOLAKAR_FLAMEWREATH, rookeryEventSpawnPos[0], rookeryEventSpawnPos[1], rookeryEventSpawnPos[2], 0.0f, TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, HOUR * IN_MILLISECONDS))
             pSolakar->GetMotionMaster()->MovePoint(1, pSummoner->GetPositionX(), pSummoner->GetPositionY(), pSummoner->GetPositionZ());
         SetData(TYPE_FLAMEWREATH, SPECIAL);
         m_uiFlamewreathEventTimer = 0;
@@ -758,12 +810,58 @@ bool AreaTrigger_at_blackrock_spire(Player* pPlayer, AreaTriggerEntry const* pAt
 
                 // Summon Nefarius and Rend for the dialogue event
                 // Note: Nefarius and Rend need to be hostile and not attackable
-                if (Creature* pNefarius = pPlayer->SummonCreature(NPC_LORD_VICTOR_NEFARIUS, aStadiumLocs[3].m_fX, aStadiumLocs[3].m_fY, aStadiumLocs[3].m_fZ, aStadiumLocs[3].m_fO, TEMPSUMMON_CORPSE_DESPAWN, 0))
+                if (Creature* pNefarius = pPlayer->SummonCreature(NPC_LORD_VICTOR_NEFARIUS, aStadiumLocs[3].m_fX, aStadiumLocs[3].m_fY, aStadiumLocs[3].m_fZ, aStadiumLocs[3].m_fO, TEMPSPAWN_CORPSE_DESPAWN, 0))
                     pNefarius->SetFactionTemporary(FACTION_BLACK_DRAGON, TEMPFACTION_NONE);
-                if (Creature* pRend = pPlayer->SummonCreature(NPC_REND_BLACKHAND, aStadiumLocs[4].m_fX, aStadiumLocs[4].m_fY, aStadiumLocs[4].m_fZ, aStadiumLocs[4].m_fO, TEMPSUMMON_CORPSE_DESPAWN, 0))
-                    pRend->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_OOC_NOT_ATTACKABLE);
+                if (Creature* pRend = pPlayer->SummonCreature(NPC_REND_BLACKHAND, aStadiumLocs[4].m_fX, aStadiumLocs[4].m_fY, aStadiumLocs[4].m_fZ, aStadiumLocs[4].m_fO, TEMPSPAWN_CORPSE_DESPAWN, 0))
+                    pRend->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
 
                 pInstance->SetData(TYPE_STADIUM, IN_PROGRESS);
+            }
+            break;
+
+        // Intro event when players enter The Furnace: three Blackhand Elite are spawned, flee from the Beast and are "killed" by it
+        // The Blackhand Elite scripts are handled in database by waypoints movement
+        case AREATRIGGER_BEAST_INTRO:
+            if (instance_blackrock_spire* pInstance = (instance_blackrock_spire*) pPlayer->GetInstanceData())
+            {
+                if (pInstance->m_bBeastIntroDone)
+                    return false;
+
+                if (Creature* pBeast = pInstance->GetSingleCreatureFromStorage(NPC_THE_BEAST))
+                {
+                    for (uint8 i = 0; i < 3; i++)
+                    {
+                        if (Creature* pTemp = pBeast->SummonCreature(NPC_BLACKHAND_ELITE, aBeastLocs[i].m_fX, aBeastLocs[i].m_fY, aBeastLocs[i].m_fZ, aBeastLocs[i].m_fO, TEMPSPAWN_DEAD_DESPAWN, 0))
+                            pTemp->GetMotionMaster()->MoveWaypoint(i);
+                    }
+                    pInstance->m_bBeastIntroDone = true;
+                }
+            }
+            break;
+
+        // Make the Beast move around the room unless it finds some target.
+        case AREATRIGGER_BEAST_AGGRO:
+            if (instance_blackrock_spire* pInstance = (instance_blackrock_spire*) pPlayer->GetInstanceData())
+            {
+                if (pInstance->m_bBeastOutOfLair)
+                    return false;
+
+                if (Creature* pBeast = pInstance->GetSingleCreatureFromStorage(NPC_THE_BEAST))
+                {
+                    pBeast->GetMotionMaster()->MoveWaypoint(0);
+                    pInstance->m_bBeastOutOfLair = true;
+
+                    // Play the intro if not already done
+                    if (!pInstance->m_bBeastIntroDone)
+                    {
+                        for (uint8 i = 0; i < 3; i++)
+                        {
+                            if (Creature* pTemp = pBeast->SummonCreature(NPC_BLACKHAND_ELITE, aBeastLocs[i].m_fX, aBeastLocs[i].m_fY, aBeastLocs[i].m_fZ, aBeastLocs[i].m_fO, TEMPSPAWN_DEAD_DESPAWN, 0))
+                                pTemp->GetMotionMaster()->MoveWaypoint(i);
+                        }
+                        pInstance->m_bBeastIntroDone = true;
+                    }
+                }
             }
             break;
     }
@@ -791,6 +889,138 @@ bool GOUse_go_father_flame(Player* /*pPlayer*/, GameObject* pGo)
     return true;
 }
 
+enum
+{
+    SPELL_STRIKE            = 15580,
+    SPELL_SUNDER_ARMOR      = 15572,
+    SPELL_DISTURB_EGGS      = 15746,
+};
+
+struct npc_rookery_hatcherAI : public ScriptedAI
+{
+    npc_rookery_hatcherAI(Creature* pCreature) : ScriptedAI(pCreature)
+    {
+        m_pInstance = (instance_blackrock_spire*) pCreature->GetInstanceData();
+        Reset();
+    }
+
+    instance_blackrock_spire* m_pInstance;
+
+    uint32 uiStrikeTimer;
+    uint32 uiSunderArmorTimer;
+    uint32 uiDisturbEggsTimer;
+    uint32 uiWaitTimer;
+
+    bool m_bIsMovementActive;
+
+    void Reset() override
+    {
+        uiStrikeTimer           = urand(5000 ,7000);
+        uiSunderArmorTimer      = 5000;
+        uiDisturbEggsTimer      = urand(8000, 10000);
+        uiWaitTimer             = 0;
+
+        m_bIsMovementActive     = false;
+    }
+
+    void MovementInform(uint32 uiMoveType, uint32 uiPointId) override
+    {
+        if (uiMoveType != POINT_MOTION_TYPE || !uiPointId)
+            return;
+
+        m_creature->GetMotionMaster()->MoveIdle();
+        m_bIsMovementActive  = false;
+        uiWaitTimer = 2000;
+
+        if (DoCastSpellIfCan(m_creature, SPELL_DISTURB_EGGS) == CAST_OK)
+            uiDisturbEggsTimer = urand(7500, 10000);
+    }
+
+    // Function to search for new rookery egg in range
+    void DoFindNewEgg()
+    {
+        std::list<GameObject*> lEggsInRange;
+        GetGameObjectListWithEntryInGrid(lEggsInRange, m_creature, GO_ROOKERY_EGG, 20.0f);
+
+        if (lEggsInRange.empty())   // No GO found
+            return;
+
+        lEggsInRange.sort(ObjectDistanceOrder(m_creature));
+        GameObject* pNearestEgg = nullptr;
+
+        // Always need to find new ones
+        for (std::list<GameObject*>::const_iterator itr = lEggsInRange.begin(); itr != lEggsInRange.end(); ++itr)
+        {
+            if (!((*itr)->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_IN_USE)))
+            {
+                pNearestEgg = *itr;
+                break;
+            }
+        }
+
+        if (!pNearestEgg)
+            return;
+
+        float fX, fY, fZ;
+        pNearestEgg->GetContactPoint(m_creature, fX, fY, fZ, 1.0f);
+        m_creature->SetWalk(false);
+        m_creature->GetMotionMaster()->MovePoint(1, fX, fY, fZ);
+        m_bIsMovementActive = true;
+    }
+
+    void UpdateAI(const uint32 uiDiff) override
+    {
+        // Return since we have no target or are disturbing an egg
+        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim() || m_bIsMovementActive)
+            return;
+
+        if (uiWaitTimer)
+        {
+            if (uiWaitTimer < uiDiff)
+            {
+                uiWaitTimer = 0;
+                m_creature->GetMotionMaster()->MoveChase(m_creature->getVictim());
+            }
+            else
+                uiWaitTimer -= uiDiff;
+        }
+
+        //  Strike Timer
+        if (uiStrikeTimer < uiDiff)
+        {
+            if (DoCastSpellIfCan(m_creature->getVictim(), SPELL_STRIKE) == CAST_OK)
+                uiStrikeTimer = urand(4000, 6000);
+        }
+        else
+            uiStrikeTimer -= uiDiff;
+
+        // Sunder Armor timer
+        if (uiSunderArmorTimer < uiDiff)
+        {
+            if (DoCastSpellIfCan(m_creature->getVictim(), SPELL_SUNDER_ARMOR) == CAST_OK)
+                uiSunderArmorTimer = 5000;
+        }
+        else
+            uiSunderArmorTimer -= uiDiff;
+
+        // Disturb Rookery Eggs timer
+        if (uiDisturbEggsTimer < uiDiff)
+        {
+            m_bIsMovementActive = false;
+            DoFindNewEgg();
+        }
+        else
+            uiDisturbEggsTimer -= uiDiff;
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+CreatureAI* GetAI_npc_rookery_hatcher(Creature* pCreature)
+{
+    return new npc_rookery_hatcherAI(pCreature);
+}
+
 void AddSC_instance_blackrock_spire()
 {
     Script* pNewScript;
@@ -813,5 +1043,10 @@ void AddSC_instance_blackrock_spire()
     pNewScript = new Script;
     pNewScript->Name = "go_father_flame";
     pNewScript->pGOUse = &GOUse_go_father_flame;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "npc_rookery_hatcher";
+    pNewScript->GetAI = &GetAI_npc_rookery_hatcher;
     pNewScript->RegisterSelf();
 }

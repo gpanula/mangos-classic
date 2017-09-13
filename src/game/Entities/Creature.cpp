@@ -143,9 +143,6 @@ Creature::Creature(CreatureSubtype subtype) : Unit(),
     for (int i = 0; i < CREATURE_MAX_SPELLS; ++i)
         m_spells[i] = 0;
 
-    m_CreatureSpellCooldowns.clear();
-    m_CreatureCategoryCooldowns.clear();
-
     SetWalk(true, true);
 }
 
@@ -312,9 +309,12 @@ bool Creature::InitEntry(uint32 Entry, Team team, CreatureData const* data /*=nu
     }
 
     // Load creature equipment
-    if (eventData && eventData->equipment_id)
+    if (eventData)
     {
-        LoadEquipment(eventData->equipment_id);             // use event equipment if any for active event
+        if (eventData->equipment_id)
+            LoadEquipment(eventData->equipment_id);             // use event equipment if any for active event
+        else if (eventData->entry_id)
+            LoadEquipment(cinfo->EquipmentTemplateId, true);     // use changed entry default template
     }
     else if (!data || data->equipmentId == 0)
     {
@@ -627,7 +627,7 @@ void Creature::RegeneratePower()
     {
         case POWER_MANA:
             // Combat and any controlled creature
-            if (isInCombat() || GetCharmerOrOwnerGuid())
+            if (isInCombat() || GetMasterGuid())
             {
                 if (!IsUnderLastManaUseEffect())
                 {
@@ -685,7 +685,7 @@ void Creature::RegenerateHealth()
     uint32 addvalue;
 
     // Not only pet, but any controlled creature
-    if (GetCharmerOrOwnerGuid())
+    if (GetMasterGuid())
     {
         float HealthIncreaseRate = sWorld.getConfig(CONFIG_FLOAT_RATE_HEALTH);
         float Spirit = GetStat(STAT_SPIRIT);
@@ -1011,7 +1011,7 @@ void Creature::SetLootRecipient(Unit* unit)
         return;
     }
 
-    Player* player = unit->GetCharmerOrOwnerPlayerOrPlayerItself();
+    Player* player = unit->GetBeneficiaryPlayer();
     if (!player)                                            // normal creature, no player involved
         return;
 
@@ -1831,7 +1831,7 @@ bool Creature::CanAssistTo(const Unit* u, const Unit* enemy, bool checkfaction /
     if (GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_NO_AGGRO)
         return false;
 
-    if (HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_PASSIVE))
+    if (HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_NPC))
         return false;
 
     // skip fighting creature
@@ -1839,7 +1839,7 @@ bool Creature::CanAssistTo(const Unit* u, const Unit* enemy, bool checkfaction /
         return false;
 
     // only free creature
-    if (GetCharmerOrOwnerGuid())
+    if (GetMasterGuid())
         return false;
 
     // only from same creature faction
@@ -2027,7 +2027,7 @@ void Creature::SetInCombatWithZone()
     }
 }
 
-bool Creature::MeetsSelectAttackingRequirement(Unit* pTarget, SpellEntry const* pSpellInfo, uint32 selectFlags) const
+bool Creature::MeetsSelectAttackingRequirement(Unit* pTarget, SpellEntry const* pSpellInfo, uint32 selectFlags, SelectAttackingTargetParams params) const
 {
     if (selectFlags)
     {
@@ -2051,6 +2051,13 @@ bool Creature::MeetsSelectAttackingRequirement(Unit* pTarget, SpellEntry const* 
 
         if ((selectFlags & SELECT_FLAG_IN_LOS) && !IsWithinLOSInMap(pTarget))
             return false;
+
+        if ((selectFlags & SELECT_FLAG_RANGE_RANGE))
+        {
+            float dist = GetCombatDistance(pTarget, false);
+            if (dist > params.range.maxRange || dist < params.range.minRange)
+                return false;
+        }
     }
 
     if (pSpellInfo)
@@ -2090,12 +2097,12 @@ bool Creature::MeetsSelectAttackingRequirement(Unit* pTarget, SpellEntry const* 
     return true;
 }
 
-Unit* Creature::SelectAttackingTarget(AttackingTarget target, uint32 position, uint32 uiSpellEntry, uint32 selectFlags) const
+Unit* Creature::SelectAttackingTarget(AttackingTarget target, uint32 position, uint32 uiSpellEntry, uint32 selectFlags, SelectAttackingTargetParams params /*= SelectAttackingTargetParams()*/) const
 {
     return SelectAttackingTarget(target, position, sSpellTemplate.LookupEntry<SpellEntry>(uiSpellEntry), selectFlags);
 }
 
-Unit* Creature::SelectAttackingTarget(AttackingTarget target, uint32 position, SpellEntry const* pSpellInfo /*= nullptr*/, uint32 selectFlags/*= 0*/) const
+Unit* Creature::SelectAttackingTarget(AttackingTarget target, uint32 position, SpellEntry const* pSpellInfo /*= nullptr*/, uint32 selectFlags/*= 0*/, SelectAttackingTargetParams params /*= SelectAttackingTargetParams()*/) const
 {
     if (!CanHaveThreatList())
         return nullptr;
@@ -2119,7 +2126,7 @@ Unit* Creature::SelectAttackingTarget(AttackingTarget target, uint32 position, S
             {
                 if (Unit* pTarget = GetMap()->GetUnit((*itr)->getUnitGuid()))
                 {
-                    if ((!selectFlags && !pSpellInfo) || MeetsSelectAttackingRequirement(pTarget, pSpellInfo, selectFlags))
+                    if ((!selectFlags && !pSpellInfo) || MeetsSelectAttackingRequirement(pTarget, pSpellInfo, selectFlags, params))
                         suitableUnits.push_back(pTarget);
                 }
             }
@@ -2138,7 +2145,7 @@ Unit* Creature::SelectAttackingTarget(AttackingTarget target, uint32 position, S
             {
                 if (Unit* pTarget = GetMap()->GetUnit((*itr)->getUnitGuid()))
                 {
-                    if ((!selectFlags && !pSpellInfo) || MeetsSelectAttackingRequirement(pTarget, pSpellInfo, selectFlags))
+                    if ((!selectFlags && !pSpellInfo) || MeetsSelectAttackingRequirement(pTarget, pSpellInfo, selectFlags, params))
                         return pTarget;
                 }
             }
@@ -2154,9 +2161,9 @@ Unit* Creature::SelectAttackingTarget(AttackingTarget target, uint32 position, S
 
             for (; ritr != threatlist.rend(); ++ritr)
             {
-                if (Unit* pTarget = GetMap()->GetUnit((*itr)->getUnitGuid()))
+                if (Unit* pTarget = GetMap()->GetUnit((*ritr)->getUnitGuid()))
                 {
-                    if ((!selectFlags && !pSpellInfo) || MeetsSelectAttackingRequirement(pTarget, pSpellInfo, selectFlags))
+                    if ((!selectFlags && !pSpellInfo) || MeetsSelectAttackingRequirement(pTarget, pSpellInfo, selectFlags, params))
                         return pTarget;
                 }
             }
@@ -2172,7 +2179,7 @@ Unit* Creature::SelectAttackingTarget(AttackingTarget target, uint32 position, S
             {
                 if (Unit* pTarget = GetMap()->GetUnit((*itr)->getUnitGuid()))
                 {
-                    if ((!selectFlags && !pSpellInfo) || MeetsSelectAttackingRequirement(pTarget, pSpellInfo, selectFlags))
+                    if ((!selectFlags && !pSpellInfo) || MeetsSelectAttackingRequirement(pTarget, pSpellInfo, selectFlags, params))
                         suitableUnits.push_back(pTarget);
                 }
             }
@@ -2196,46 +2203,6 @@ Unit* Creature::SelectAttackingTarget(AttackingTarget target, uint32 position, S
     }
 
     return nullptr;
-}
-
-void Creature::_AddCreatureSpellCooldown(uint32 spell_id, time_t end_time)
-{
-    m_CreatureSpellCooldowns[spell_id] = end_time;
-}
-
-void Creature::_AddCreatureCategoryCooldown(uint32 category, time_t apply_time)
-{
-    m_CreatureCategoryCooldowns[category] = apply_time;
-}
-
-void Creature::AddCreatureSpellCooldown(uint32 spellid)
-{
-    SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellid);
-    if (!spellInfo)
-        return;
-
-    uint32 cooldown = GetSpellRecoveryTime(spellInfo);
-    if (cooldown)
-        _AddCreatureSpellCooldown(spellid, time(nullptr) + cooldown / IN_MILLISECONDS);
-
-    if (spellInfo->Category)
-        _AddCreatureCategoryCooldown(spellInfo->Category, time(nullptr));
-}
-
-bool Creature::HasCategoryCooldown(uint32 spell_id) const
-{
-    SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spell_id);
-    if (!spellInfo)
-        return false;
-
-    CreatureSpellCooldowns::const_iterator itr = m_CreatureCategoryCooldowns.find(spellInfo->Category);
-    return (itr != m_CreatureCategoryCooldowns.end() && time_t(itr->second + (spellInfo->CategoryRecoveryTime / IN_MILLISECONDS)) > time(nullptr));
-}
-
-bool Creature::HasSpellCooldown(uint32 spell_id) const
-{
-    CreatureSpellCooldowns::const_iterator itr = m_CreatureSpellCooldowns.find(spell_id);
-    return (itr != m_CreatureSpellCooldowns.end() && itr->second > time(nullptr)) || HasCategoryCooldown(spell_id);
 }
 
 bool Creature::IsInEvadeMode() const
@@ -2429,10 +2396,10 @@ void Creature::SetFactionTemporary(uint32 factionId, uint32 tempFactionFlags)
 
     if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_NON_ATTACKABLE)
         RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-    if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_OOC_NOT_ATTACK)
-        RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_OOC_NOT_ATTACKABLE);
-    if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_PASSIVE)
-        RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PASSIVE);
+    if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_IMMUNE_TO_PLAYER)
+        RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
+    if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_IMMUNE_TO_NPC)
+        RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
     if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_PACIFIED)
         RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
     if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_NOT_SELECTABLE)
@@ -2452,13 +2419,13 @@ void Creature::ClearTemporaryFaction()
 
     ForceHealthAndPowerUpdate();                            // update health and power for client needed to hide enemy real value
 
-    // Reset UNIT_FLAG_NON_ATTACKABLE, UNIT_FLAG_OOC_NOT_ATTACKABLE, UNIT_FLAG_PASSIVE, UNIT_FLAG_PACIFIED or UNIT_FLAG_NOT_SELECTABLE flags
+    // Reset UNIT_FLAG_NON_ATTACKABLE, UNIT_FLAG_IMMUNE_TO_PLAYER, UNIT_FLAG_IMMUNE_TO_NPC, UNIT_FLAG_PACIFIED or UNIT_FLAG_NOT_SELECTABLE flags
     if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_NON_ATTACKABLE && GetCreatureInfo()->UnitFlags & UNIT_FLAG_NON_ATTACKABLE)
         SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-    if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_OOC_NOT_ATTACK && GetCreatureInfo()->UnitFlags & UNIT_FLAG_OOC_NOT_ATTACKABLE && !isInCombat())
-        SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_OOC_NOT_ATTACKABLE);
-    if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_PASSIVE && GetCreatureInfo()->UnitFlags & UNIT_FLAG_PASSIVE)
-        SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PASSIVE);
+    if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_IMMUNE_TO_PLAYER && GetCreatureInfo()->UnitFlags & UNIT_FLAG_IMMUNE_TO_PLAYER)
+        SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
+    if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_IMMUNE_TO_NPC && GetCreatureInfo()->UnitFlags & UNIT_FLAG_IMMUNE_TO_NPC)
+        SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
     if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_PACIFIED && GetCreatureInfo()->UnitFlags & UNIT_FLAG_PACIFIED)
         SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
     if (m_temporaryFactionFlags & TEMPFACTION_TOGGLE_NOT_SELECTABLE && GetCreatureInfo()->UnitFlags & UNIT_FLAG_NOT_SELECTABLE)

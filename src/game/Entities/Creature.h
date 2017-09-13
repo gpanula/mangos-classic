@@ -321,6 +321,7 @@ enum SelectFlags
     SELECT_FLAG_NOT_IN_MELEE_RANGE  = 0x080,
     SELECT_FLAG_HAS_AURA            = 0x100,
     SELECT_FLAG_NOT_AURA            = 0x200,
+    SELECT_FLAG_RANGE_RANGE         = 0x400,
 };
 
 enum RegenStatsFlags
@@ -383,6 +384,24 @@ typedef std::list<VendorItemCount> VendorItemCounts;
 
 struct TrainerSpell
 {
+#ifdef BUILD_PLAYERBOT
+    TrainerSpell() : spell(0), spellCost(0), reqSkill(0), reqSkillValue(0), reqLevel(0), learnedSpell(0), isProvidedReqLevel(false), conditionId(0) {}
+
+    TrainerSpell(uint32 _spell, uint32 _spellCost, uint32 _reqSkill, uint32 _reqSkillValue, uint32 _reqLevel, uint32 _learnedspell, bool _isProvidedReqLevel, uint32 _conditionId)
+        : spell(_spell), spellCost(_spellCost), reqSkill(_reqSkill), reqSkillValue(_reqSkillValue), reqLevel(_reqLevel), learnedSpell(_learnedspell), isProvidedReqLevel(_isProvidedReqLevel), conditionId(_conditionId) {}
+
+    uint32 spell;
+    uint32 spellCost;
+    uint32 reqSkill;
+    uint32 reqSkillValue;
+    uint32 reqLevel;
+    uint32 learnedSpell;
+    uint32 conditionId;
+    bool isProvidedReqLevel;
+
+    // helpers
+    bool IsCastable() const { return learnedSpell != spell; }
+#else
     TrainerSpell() : spell(0), spellCost(0), reqSkill(0), reqSkillValue(0), reqLevel(0), isProvidedReqLevel(false), conditionId(0) {}
 
     TrainerSpell(uint32 _spell, uint32 _spellCost, uint32 _reqSkill, uint32 _reqSkillValue, uint32 _reqLevel, bool _isProvidedReqLevel, uint32 _conditionId)
@@ -395,6 +414,7 @@ struct TrainerSpell
     uint32 reqLevel;
     uint32 conditionId;
     bool isProvidedReqLevel;
+#endif
 };
 
 typedef std::unordered_map < uint32 /*spellid*/, TrainerSpell > TrainerSpellMap;
@@ -409,8 +429,6 @@ struct TrainerSpellData
     TrainerSpell const* Find(uint32 spell_id) const;
     void Clear() { spellList.clear(); }
 };
-
-typedef std::map<uint32, time_t> CreatureSpellCooldowns;
 
 // max different by z coordinate for creature aggro reaction
 #define CREATURE_Z_ATTACK_RANGE 3
@@ -475,11 +493,27 @@ enum TemporaryFactionFlags                                  // Used at real fact
     TEMPFACTION_RESTORE_COMBAT_STOP     = 0x02,             // ... at CombatStop() (happens at creature death, at evade or custom scripte among others)
     TEMPFACTION_RESTORE_REACH_HOME      = 0x04,             // ... at reaching home in home movement (evade), if not already done at CombatStop()
     TEMPFACTION_TOGGLE_NON_ATTACKABLE   = 0x08,             // Remove UNIT_FLAG_NON_ATTACKABLE(0x02) when faction is changed (reapply when temp-faction is removed)
-    TEMPFACTION_TOGGLE_OOC_NOT_ATTACK   = 0x10,             // Remove UNIT_FLAG_OOC_NOT_ATTACKABLE(0x100) when faction is changed (reapply when temp-faction is removed)
-    TEMPFACTION_TOGGLE_PASSIVE          = 0x20,             // Remove UNIT_FLAG_PASSIVE(0x200) when faction is changed (reapply when temp-faction is removed)
+    TEMPFACTION_TOGGLE_IMMUNE_TO_PLAYER = 0x10,             // Remove UNIT_FLAG_IMMUNE_TO_PLAYER(0x100) when faction is changed (reapply when temp-faction is removed)
+    TEMPFACTION_TOGGLE_IMMUNE_TO_NPC          = 0x20,             // Remove UNIT_FLAG_IMMUNE_TO_NPC(0x200) when faction is changed (reapply when temp-faction is removed)
     TEMPFACTION_TOGGLE_PACIFIED         = 0x40,             // Remove UNIT_FLAG_PACIFIED(0x20000) when faction is changed (reapply when temp-faction is removed)
     TEMPFACTION_TOGGLE_NOT_SELECTABLE   = 0x80,             // Remove UNIT_FLAG_NOT_SELECTABLE(0x2000000) when faction is changed (reapply when temp-faction is removed)
     TEMPFACTION_ALL,
+};
+
+struct SelectAttackingTargetParams
+{
+    union
+    {
+        struct
+        {
+            uint32 minRange;
+            uint32 maxRange;
+        } range;
+        struct
+        {
+            uint32 params[2];
+        } raw;
+    };
 };
 
 class Creature : public Unit
@@ -513,6 +547,11 @@ class Creature : public Unit
         bool IsPet() const { return m_subtype == CREATURE_SUBTYPE_PET; }
         bool IsTotem() const { return m_subtype == CREATURE_SUBTYPE_TOTEM; }
         bool IsTemporarySummon() const { return m_subtype == CREATURE_SUBTYPE_TEMPORARY_SUMMON; }
+
+#ifdef BUILD_PLAYERBOT
+        // Adds functionality to load/unload bots from NPC, also need to apply SQL scripts
+        void LoadBotMenu(Player *pPlayer);
+#endif
 
         bool IsCorpse() const { return getDeathState() ==  CORPSE; }
         bool IsDespawned() const { return getDeathState() ==  DEAD; }
@@ -579,12 +618,6 @@ class Creature : public Unit
         SpellSchoolMask GetMeleeDamageSchoolMask() const override { return m_meleeDamageSchoolMask; }
         void SetMeleeDamageSchool(SpellSchools school) { m_meleeDamageSchoolMask = GetSchoolMask(school); }
 
-        void _AddCreatureSpellCooldown(uint32 spell_id, time_t end_time);
-        void _AddCreatureCategoryCooldown(uint32 category, time_t apply_time);
-        void AddCreatureSpellCooldown(uint32 spellid);
-        bool HasSpellCooldown(uint32 spell_id) const;
-        bool HasCategoryCooldown(uint32 spell_id) const;
-
         bool HasSpell(uint32 spellID) const override;
 
         bool UpdateEntry(uint32 entry, Team team = ALLIANCE, const CreatureData* data = nullptr, GameEventCreatureData const* eventData = nullptr, bool preserveHPAndPower = true);
@@ -650,8 +683,6 @@ class Creature : public Unit
         SpellEntry const* ReachWithSpellCure(Unit* pVictim);
 
         uint32 m_spells[CREATURE_MAX_SPELLS];
-        CreatureSpellCooldowns m_CreatureSpellCooldowns;
-        CreatureSpellCooldowns m_CreatureCategoryCooldowns;
 
         void SendAIReaction(AiReaction reactionType);
 
@@ -698,8 +729,8 @@ class Creature : public Unit
 
         void SetInCombatWithZone();
 
-        Unit* SelectAttackingTarget(AttackingTarget target, uint32 position, uint32 uiSpellEntry, uint32 selectFlags = 0) const;
-        Unit* SelectAttackingTarget(AttackingTarget target, uint32 position, SpellEntry const* pSpellInfo = nullptr, uint32 selectFlags = 0) const;
+        Unit* SelectAttackingTarget(AttackingTarget target, uint32 position, uint32 uiSpellEntry, uint32 selectFlags = 0, SelectAttackingTargetParams params = SelectAttackingTargetParams()) const;
+        Unit* SelectAttackingTarget(AttackingTarget target, uint32 position, SpellEntry const* pSpellInfo = nullptr, uint32 selectFlags = 0, SelectAttackingTargetParams params = SelectAttackingTargetParams()) const;
 
         bool HasQuest(uint32 quest_id) const override;
         bool HasInvolvedQuest(uint32 quest_id)  const override;
@@ -734,7 +765,7 @@ class Creature : public Unit
 
         void SetVirtualItem(VirtualItemSlot slot, uint32 item_id);
     protected:
-        bool MeetsSelectAttackingRequirement(Unit* pTarget, SpellEntry const* pSpellInfo, uint32 selectFlags) const;
+        bool MeetsSelectAttackingRequirement(Unit* pTarget, SpellEntry const* pSpellInfo, uint32 selectFlags, SelectAttackingTargetParams params) const;
 
         bool CreateFromProto(uint32 guidlow, CreatureInfo const* cinfo, Team team, const CreatureData* data = nullptr, GameEventCreatureData const* eventData = nullptr);
         bool InitEntry(uint32 entry, Team team = ALLIANCE, const CreatureData* data = nullptr, GameEventCreatureData const* eventData = nullptr);

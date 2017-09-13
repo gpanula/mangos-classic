@@ -77,10 +77,10 @@ void WorldSocket::SendPacket(const WorldPacket& pct, bool immediate)
 
     m_crypt.EncryptSend(reinterpret_cast<uint8 *>(&header), sizeof(header));
 
-    Write(reinterpret_cast<const char *>(&header), sizeof(header));
-
-    if (!!pct.size())
-        Write(reinterpret_cast<const char *>(pct.contents()), pct.size());
+    if (pct.size() > 0)
+        Write(reinterpret_cast<const char *>(&header), sizeof(header), reinterpret_cast<const char *>(pct.contents()), pct.size());
+    else
+        Write(reinterpret_cast<const char *>(&header), sizeof(header));
 
     if (immediate)
         ForceFlushOut();
@@ -423,9 +423,7 @@ bool WorldSocket::HandleAuthSession(WorldPacket &recvPacket)
     SqlStatement stmt = LoginDatabase.CreateStatement(updAccount, "UPDATE account SET last_ip = ? WHERE username = ?");
     stmt.PExecute(address.c_str(), account.c_str());
 
-    if (!(m_session = new WorldSession(id, this, AccountTypes(security), mutetime, locale)))
-        return false;
-
+    m_session = new WorldSession(id, this, AccountTypes(security), mutetime, locale);
     m_crypt.Init(&K);
 
     m_session->LoadTutorialsData();

@@ -49,6 +49,8 @@ enum Gossip_Option
     GOSSIP_OPTION_ARMORER           = 15,                   // UNIT_NPC_FLAG_ARMORER             (4096)
     GOSSIP_OPTION_UNLEARNTALENTS    = 16,                   // UNIT_NPC_FLAG_TRAINER             (16) (bonus option for GOSSIP_OPTION_TRAINER)
     GOSSIP_OPTION_UNLEARNPETSKILLS  = 17,                   // UNIT_NPC_FLAG_TRAINER             (16) (bonus option for GOSSIP_OPTION_TRAINER)
+    GOSSIP_OPTION_BOT               = 99,                   // UNIT_NPC_FLAG_GOSSIP              (1) UNUSED (just for bot system)
+
     GOSSIP_OPTION_MAX
 };
 
@@ -171,6 +173,10 @@ class GossipMenu
         void SetMenuId(uint32 menu_id) { m_gMenuId = menu_id; }
         uint32 GetMenuId() const { return m_gMenuId; }
 
+        // used to avoid opening gossip menu at node discover
+        void SetDiscoveredNode() { m_discoveredNode = true; }
+        bool IsJustDiscoveredNode() { return m_discoveredNode; }
+
         void AddGossipMenuItemData(int32 action_menu, uint32 action_poi, uint32 action_script);
 
         unsigned int MenuItemCount() const
@@ -188,9 +194,16 @@ class GossipMenu
             return m_gItems[ Id ];
         }
 
-        GossipMenuItemData const& GetItemData(unsigned int indexId)
+        bool IsItemsDataEmpty() const { return m_gItemsData.empty(); }
+
+        GossipMenuItemData const* GetItemData(unsigned int indexId)
         {
-            return m_gItemsData[indexId];
+            if (indexId >= m_gItemsData.size())
+            {
+                sLog.outError("GossipMenu::GetItemData> indexId is out of bounds!");
+                return nullptr;
+            }
+            return &m_gItemsData[indexId];
         }
 
         uint32 MenuItemSender(unsigned int ItemId);
@@ -206,6 +219,7 @@ class GossipMenu
         GossipMenuItemDataList  m_gItemsData;
 
         uint32 m_gMenuId;
+        bool m_discoveredNode;
 
     private:
         WorldSession* m_session;

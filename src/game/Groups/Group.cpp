@@ -29,6 +29,9 @@
 #include "BattleGround/BattleGround.h"
 #include "Maps/MapManager.h"
 #include "Maps/MapPersistentStateMgr.h"
+#ifdef BUILD_PLAYERBOT
+    #include "PlayerBot/Base/PlayerbotMgr.h"
+#endif
 
 GroupMemberStatus GetGroupMemberStatus(const Player *member = nullptr)
 {
@@ -42,7 +45,7 @@ GroupMemberStatus GetGroupMemberStatus(const Player *member = nullptr)
             flags |= MEMBER_STATUS_DEAD;
         if (member->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST))
             flags |= MEMBER_STATUS_GHOST;
-        if (member->IsFFAPvP())
+        if (member->IsPvPFreeForAll())
             flags |= MEMBER_STATUS_PVP_FFA;
         if (member->isAFK())
             flags |= MEMBER_STATUS_AFK;
@@ -180,6 +183,15 @@ bool Group::LoadMemberFromDB(uint32 guidLow, uint8 subgroup, bool assistant)
 
     member.group     = subgroup;
     member.assistant = assistant;
+
+    int32 lastMap = sObjectMgr.GetPlayerMapIdByGUID(member.guid);
+    if (lastMap < 0)
+    {
+        sLog.outError("Group::LoadMemberFromDB> MapId is not found for %s.", member.guid.GetString().c_str());
+        return false;
+    }
+    member.lastMap = uint32(lastMap);
+
     m_memberSlots.push_back(member);
 
     SubGroupCounterIncrease(subgroup);
@@ -297,6 +309,13 @@ bool Group::AddMember(ObjectGuid guid, const char* name)
 
 uint32 Group::RemoveMember(ObjectGuid guid, uint8 method)
 {
+#ifdef BUILD_PLAYERBOT
+    // if master leaves group, all bots leave group
+    Player* const player = sObjectMgr.GetPlayer(guid);
+    if (player && player->GetPlayerbotMgr())
+        player->GetPlayerbotMgr()->RemoveAllBotsFromGroup();
+#endif
+
     // remove member and change leader (if need) only if strong more 2 members _before_ member remove
     if (GetMembersCount() > GetMembersMinCount())
     {
@@ -677,11 +696,18 @@ bool Group::_addMember(ObjectGuid guid, const char* name, bool isAssistant, uint
 
     Player* player = sObjectMgr.GetPlayer(guid, false);
 
+    uint32 lastMap = 0;
+    if (player && player->IsInWorld())
+        lastMap = player->GetMapId();
+    else if (player && player->IsBeingTeleported())
+        lastMap = player->GetTeleportDest().mapid;
+
     MemberSlot member;
     member.guid      = guid;
     member.name      = name;
     member.group     = group;
     member.assistant = isAssistant;
+    member.lastMap   = lastMap;
     m_memberSlots.push_back(member);
 
     SubGroupCounterIncrease(group);
@@ -707,7 +733,7 @@ bool Group::_addMember(ObjectGuid guid, const char* name, bool isAssistant, uint
                     player->m_InstanceValid = true;
         }
 
-        if (player->IsFFAPvP())
+        if (player->IsPvPFreeForAll())
         {
             player->ForceHealthAndPowerUpdate();
             for (GroupReference* itr = GetFirstMember(); itr != nullptr; itr = itr->next())
@@ -1085,6 +1111,30 @@ void Group::ResetInstances(InstanceResetMethod method, Player* SendMsgTo)
 
     // method can be INSTANCE_RESET_ALL, INSTANCE_RESET_GROUP_DISBAND
 
+    typedef std::set<uint32> Uint32Set;
+    Uint32Set mapsWithOfflinePlayer;                        // to store map of offline players
+    Uint32Set mapsWithBeingTeleportedPlayer;                // to store map of offline players
+
+    if (method != INSTANCE_RESET_GROUP_DISBAND)
+    {
+        // Store maps in which are offline members for instance reset check.
+        for (member_citerator itr = m_memberSlots.begin(); itr != m_memberSlots.end(); ++itr)
+        {
+            Player* plr = ObjectAccessor::FindPlayer(itr->guid);
+            if (!plr)
+            {
+                // add last map from offline player
+                mapsWithOfflinePlayer.insert(itr->lastMap);
+            }
+            else
+            {
+                // add teleport destination map
+                if (plr->IsBeingTeleported())
+                    mapsWithBeingTeleportedPlayer.insert(plr->GetTeleportDest().mapid);
+            }
+        }
+    }
+
     for (BoundInstancesMap::iterator itr = m_boundInstances.begin(); itr != m_boundInstances.end();)
     {
         DungeonPersistentState* state = itr->second.state;
@@ -1105,10 +1155,28 @@ void Group::ResetInstances(InstanceResetMethod method, Player* SendMsgTo)
             }
         }
 
+        // check if there are offline members on the map
+        if (method != INSTANCE_RESET_GROUP_DISBAND && mapsWithOfflinePlayer.find(state->GetMapId()) != mapsWithOfflinePlayer.end())
+        {
+            if (SendMsgTo)
+                SendMsgTo->SendResetInstanceFailed(1, state->GetMapId());
+            ++itr;
+            continue;
+        }
+
+        // check if there are teleporting members to the map
+        if (method != INSTANCE_RESET_GROUP_DISBAND && mapsWithBeingTeleportedPlayer.find(state->GetMapId()) != mapsWithBeingTeleportedPlayer.end())
+        {
+            if (SendMsgTo)
+                SendMsgTo->SendResetInstanceFailed(2, state->GetMapId());
+            ++itr;
+            continue;
+        }
+
         bool isEmpty = true;
-        // if the map is loaded, reset it
-        if (Map* map = sMapMgr.FindMap(state->GetMapId(), state->GetInstanceId()))
-            if (map->IsDungeon() && !(method == INSTANCE_RESET_GROUP_DISBAND && !state->CanReset()))
+        // if the map is loaded, reset it if can
+        if (entry->IsDungeon() && !(method == INSTANCE_RESET_GROUP_DISBAND && !state->CanReset()))
+            if (Map* map = sMapMgr.FindMap(state->GetMapId(), state->GetInstanceId()))
                 isEmpty = ((DungeonMap*)map)->Reset(method);
 
         if (SendMsgTo)
@@ -1263,7 +1331,7 @@ static void RewardGroupAtKill_helper(Player* pGroupGuy, Unit* pVictim, uint32 co
  */
 void Group::RewardGroupAtKill(Unit* pVictim, Player* player_tap)
 {
-    bool PvP = pVictim->isCharmedOwnedByPlayerOrPlayer();
+    bool PvP = pVictim->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
 
     // prepare data for near group iteration (PvP and !PvP cases)
     uint32 count = 0;

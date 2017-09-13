@@ -722,6 +722,17 @@ void GameObject::DeleteFromDB() const
     WorldDatabase.PExecuteLog("DELETE FROM gameobject_battleground WHERE guid = '%u'", GetGUIDLow());
 }
 
+void GameObject::SetOwnerGuid(ObjectGuid guid)
+{
+    m_spawnedByDefault = false;                     // all object with owner is despawned after delay
+    SetGuidValue(OBJECT_FIELD_CREATED_BY, guid);
+}
+
+Unit* GameObject::GetOwner() const
+{
+    return ObjectAccessor::GetUnit(*this, GetOwnerGuid());
+}
+
 GameObjectInfo const* GameObject::GetGOInfo() const
 {
     return m_goInfo;
@@ -758,11 +769,6 @@ bool GameObject::IsTransport() const
     GameObjectInfo const* gInfo = GetGOInfo();
     if (!gInfo) return false;
     return gInfo->type == GAMEOBJECT_TYPE_TRANSPORT || gInfo->type == GAMEOBJECT_TYPE_MO_TRANSPORT;
-}
-
-Unit* GameObject::GetOwner() const
-{
-    return ObjectAccessor::GetUnit(*this, GetOwnerGuid());
 }
 
 void GameObject::SaveRespawnTime()
@@ -1222,7 +1228,7 @@ void GameObject::Use(Unit* user)
                     float thisDistance = player->GetDistance2d(x_i, y_i);
 
                     /* debug code. It will spawn a npc on each slot to visualize them.
-                    Creature* helper = player->SummonCreature(14496, x_i, y_i, GetPositionZ(), GetOrientation(), TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 10000);
+                    Creature* helper = player->SummonCreature(14496, x_i, y_i, GetPositionZ(), GetOrientation(), TEMPSPAWN_TIMED_OR_DEAD_DESPAWN, 10000);
                     std::ostringstream output;
                     output << i << ": thisDist: " << thisDistance;
                     helper->MonsterSay(output.str().c_str(), LANG_UNIVERSAL);
@@ -1720,7 +1726,7 @@ bool GameObject::IsHostileTo(Unit const* unit) const
     if (Unit const* owner = GetOwner())
         return owner->IsHostileTo(unit);
 
-    if (Unit const* targetOwner = unit->GetCharmerOrOwner())
+    if (Unit const* targetOwner = unit->GetMaster())
         return IsHostileTo(targetOwner);
 
     // for not set faction case: be hostile towards player, not hostile towards not-players
@@ -1763,7 +1769,7 @@ bool GameObject::IsFriendlyTo(Unit const* unit) const
     if (Unit const* owner = GetOwner())
         return owner->IsFriendlyTo(unit);
 
-    if (Unit const* targetOwner = unit->GetCharmerOrOwner())
+    if (Unit const* targetOwner = unit->GetMaster())
         return IsFriendlyTo(targetOwner);
 
     // for not set faction case (wild object) use hostile case
@@ -1883,7 +1889,7 @@ void GameObject::SetLootRecipient(Unit* pUnit)
         return;
     }
 
-    Player* player = pUnit->GetCharmerOrOwnerPlayerOrPlayerItself();
+    Player* player = pUnit->GetBeneficiaryPlayer();
     if (!player)                                            // normal creature, no player involved
         return;
 

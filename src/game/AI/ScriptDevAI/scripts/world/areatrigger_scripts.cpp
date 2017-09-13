@@ -17,7 +17,7 @@
 /* ScriptData
 SDName: Areatrigger_Scripts
 SD%Complete: 100
-SDComment: Quest support: 4291, 6681, 7632
+SDComment: Quest support: 4291, 6681, 7632, 273
 SDCategory: Areatrigger
 EndScriptData
 
@@ -96,7 +96,7 @@ bool AreaTrigger_at_scent_larkorwi(Player* pPlayer, AreaTriggerEntry const* pAt)
     if (pPlayer->isAlive() && !pPlayer->isGameMaster() && pPlayer->GetQuestStatus(QUEST_SCENT_OF_LARKORWI) == QUEST_STATUS_INCOMPLETE)
     {
         if (!GetClosestCreatureWithEntry(pPlayer, NPC_LARKORWI_MATE, 25.0f, false, false))
-            pPlayer->SummonCreature(NPC_LARKORWI_MATE, pAt->x, pAt->y, pAt->z, 3.3f, TEMPSUMMON_TIMED_OOC_DESPAWN, 2 * MINUTE * IN_MILLISECONDS);
+            pPlayer->SummonCreature(NPC_LARKORWI_MATE, pAt->x, pAt->y, pAt->z, 3.3f, TEMPSPAWN_TIMED_OOC_DESPAWN, 2 * MINUTE * IN_MILLISECONDS);
     }
 
     return false;
@@ -130,7 +130,7 @@ bool AreaTrigger_at_murkdeep(Player* pPlayer, AreaTriggerEntry const* /*pAt*/)
             // Spawn locations are defined in World Maps Scripts.h
             pPlayer->GetRandomPoint(aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][0], aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][1], aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][2], 5.0f, fX, fY, fZ);
 
-            if (Creature* pTemp = pPlayer->SummonCreature(NPC_GREYMIST_COASTRUNNNER, fX, fY, fZ, aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][3], TEMPSUMMON_DEAD_DESPAWN, 0))
+            if (Creature* pTemp = pPlayer->SummonCreature(NPC_GREYMIST_COASTRUNNNER, fX, fY, fZ, aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][3], TEMPSPAWN_DEAD_DESPAWN, 0))
             {
                 pTemp->SetWalk(false);
                 pTemp->GetRandomPoint(aSpawnLocations[POS_IDX_MURKDEEP_MOVE][0], aSpawnLocations[POS_IDX_MURKDEEP_MOVE][1], aSpawnLocations[POS_IDX_MURKDEEP_MOVE][2], 5.0f, fX, fY, fZ);
@@ -184,10 +184,88 @@ bool AreaTrigger_at_ancient_leaf(Player* pPlayer, AreaTriggerEntry const* pAt)
             return true;
 
         for (uint8 i = 0; i < MAX_ANCIENTS; ++i)
-            pPlayer->SummonCreature(afSpawnLocations[i].uiEntry, afSpawnLocations[i].fX, afSpawnLocations[i].fY, afSpawnLocations[i].fZ, afSpawnLocations[i].fO, TEMPSUMMON_TIMED_DESPAWN, 5 * MINUTE * IN_MILLISECONDS);
+            pPlayer->SummonCreature(afSpawnLocations[i].uiEntry, afSpawnLocations[i].fX, afSpawnLocations[i].fY, afSpawnLocations[i].fZ, afSpawnLocations[i].fO, TEMPSPAWN_TIMED_DESPAWN, 5 * MINUTE * IN_MILLISECONDS);
     }
 
     return false;
+}
+
+/*######
+## Miran and Huldar are Ambushed when AT-171 is triggered
+## when quest 273 is active
+######*/
+
+enum
+{
+    QUEST_RESUPPLYING_THE_EXCAVATION    = 273,
+
+    NPC_SAEAN                           = 1380,
+    NPC_MIRAN                           = 1379,
+    NPC_HULDAR                          = 2057,
+    NPC_DARK_IRON_AMBUSHER              = 1981,
+
+    FACTION_HOSTILE                     = 14
+};
+
+struct Location
+{
+    float m_fX, m_fY, m_fZ, m_fO;
+};
+
+static const Location m_miranAmbushSpawns[] =
+{
+    { -5760.73f, -3437.71f, 305.54f, 2.41f },   // Saean 
+    { -5759.85f, -3441.29f, 305.57f, 2.24f },   // Dark Iron Ambusher 1
+    { -5757.75f, -3437.61f, 304.32f, 2.56f },   // Dark Iron Ambusher 2
+};
+
+bool AreaTrigger_at_huldar_miran(Player* pPlayer, AreaTriggerEntry const* /*pAt*/)
+{
+    // Player is deaed, a GM, quest complete or no quest, do nothing
+    if (!pPlayer->isAlive() || pPlayer->isGameMaster() ||
+        pPlayer->GetQuestStatus(QUEST_RESUPPLYING_THE_EXCAVATION) == QUEST_STATUS_COMPLETE ||
+        pPlayer->GetQuestStatus(QUEST_RESUPPLYING_THE_EXCAVATION) == QUEST_STATUS_NONE)
+        return false;
+
+    ScriptedMap* pScriptedMap = (ScriptedMap*)pPlayer->GetInstanceData();
+    if (!pScriptedMap)
+        return false;
+
+    Creature* m_miran = GetClosestCreatureWithEntry(pPlayer, NPC_MIRAN, 60.0f, true);
+    Creature* m_huldar = GetClosestCreatureWithEntry(pPlayer, NPC_HULDAR, 60.0f, true);
+    Creature* m_saean = GetClosestCreatureWithEntry(pPlayer, NPC_SAEAN, 60.0f, true);
+
+    // Quest NPCs not availble, do noting
+    if (!m_miran || !m_huldar)
+        return false;
+
+    // complete quest
+    pPlayer->CompleteQuest(QUEST_RESUPPLYING_THE_EXCAVATION);
+    pPlayer->SendQuestCompleteEvent(QUEST_RESUPPLYING_THE_EXCAVATION);
+
+    // Quest NPCs in combat, skip the rest, prevent double spawns
+    if (m_miran->isInCombat() || m_huldar->isInCombat()) 
+        return true;
+
+    // Check if Saean is spawned and set his faction to hostile - summon him if not spawned
+    if (m_saean)
+        m_saean->SetFactionTemporary(FACTION_HOSTILE, TEMPFACTION_RESTORE_RESPAWN);
+    else 
+    {
+        m_huldar
+            ->SummonCreature(NPC_SAEAN, m_miranAmbushSpawns[0].m_fX, m_miranAmbushSpawns[0].m_fY, m_miranAmbushSpawns[0].m_fZ, m_miranAmbushSpawns[0].m_fO, TEMPSPAWN_CORPSE_TIMED_DESPAWN, 25000)
+            ->SetFactionTemporary(FACTION_HOSTILE, TEMPFACTION_RESTORE_RESPAWN);
+        m_saean = GetClosestCreatureWithEntry(pPlayer, NPC_SAEAN, 60.0f, true);
+    }
+   
+    // Check if any Dark Iron Ambusher are already spawned or dead, if so, do nothing
+    if (!GetClosestCreatureWithEntry(pPlayer, NPC_DARK_IRON_AMBUSHER, 60.0f, false, false))
+    {
+        m_saean->SummonCreature(NPC_DARK_IRON_AMBUSHER, m_miranAmbushSpawns[1].m_fX, m_miranAmbushSpawns[1].m_fY, m_miranAmbushSpawns[1].m_fZ, m_miranAmbushSpawns[1].m_fO, TEMPSPAWN_CORPSE_TIMED_DESPAWN, 25000);
+        m_saean->SummonCreature(NPC_DARK_IRON_AMBUSHER, m_miranAmbushSpawns[2].m_fX, m_miranAmbushSpawns[2].m_fY, m_miranAmbushSpawns[2].m_fZ, m_miranAmbushSpawns[2].m_fO, TEMPSPAWN_CORPSE_TIMED_DESPAWN, 25000);
+    }
+
+    return true;
 }
 
 void AddSC_areatrigger_scripts()
@@ -217,5 +295,10 @@ void AddSC_areatrigger_scripts()
     pNewScript = new Script;
     pNewScript->Name = "at_ancient_leaf";
     pNewScript->pAreaTrigger = &AreaTrigger_at_ancient_leaf;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "at_huldar_miran";
+    pNewScript->pAreaTrigger = &AreaTrigger_at_huldar_miran;
     pNewScript->RegisterSelf();
 }
