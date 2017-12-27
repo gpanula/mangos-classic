@@ -2303,7 +2303,7 @@ INSERT INTO script_texts (entry,content_default,sound,type,language,emote,commen
 (-1533071,'Enough prattling. Let them come! We shall grind their bones to dust.',8842,6,0,0,'mograine SAY_MORG_TAUNT1'),
 (-1533072,'Conserve your anger! Harness your rage! You will all have outlets for your frustration soon enough.',8843,6,0,0,'mograine SAY_MORG_TAUNT2'),
 (-1533073,'Life is meaningless. It is in death that we are truly tested.',8844,6,0,0,'mograine SAY_MORG_TAUNT3'),
-(-1533074,'I...am...released! Perhaps it\'s not too late to — noo! I need...more time...',8838,1,0,0,'mograine SAY_MORG_DEATH'),
+(-1533074,'I...am...released! Perhaps it\'s not too late to  noo! I need...more time...',8838,1,0,0,'mograine SAY_MORG_DEATH'),
 
 (-1533075,'Glory to the master!',8845,1,0,0,'noth SAY_AGGRO1'),
 (-1533076,'Your life is forfeit!',8846,1,0,0,'noth SAY_AGGRO2'),
