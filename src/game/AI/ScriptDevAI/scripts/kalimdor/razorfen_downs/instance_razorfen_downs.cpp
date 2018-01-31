@@ -51,7 +51,7 @@ void instance_razorfen_downs::OnCreatureCreate(Creature* pCreature)
 void instance_razorfen_downs::OnObjectCreate(GameObject* pGo)
 {
     if (pGo->GetEntry() == GO_GONG)
-        m_mGoEntryGuidStore[GO_GONG] = pGo->GetObjectGuid();
+        m_goEntryGuidStore[GO_GONG] = pGo->GetObjectGuid();
 }
 
 void instance_razorfen_downs::SetData(uint32 uiType, uint32 uiData)
@@ -160,7 +160,7 @@ void instance_razorfen_downs::DoSpawnWaveIfCan(GameObject* pGo)
         pGo->GetRandomPoint(aSpawnLocations[uiPos].m_fX, aSpawnLocations[uiPos].m_fY, aSpawnLocations[uiPos].m_fZ, 5.0f, fPosX, fPosY, fPosZ);
 
         // move the summoned NPC toward the gong
-        if (Creature* pSummoned = pGo->SummonCreature(aWaveSummonInformation[m_uiWaveCounter].m_uiNpcEntry, fPosX, fPosY, fPosZ, aSpawnLocations[uiPos].m_fO, TEMPSUMMON_DEAD_DESPAWN, 0))
+        if (Creature* pSummoned = pGo->SummonCreature(aWaveSummonInformation[m_uiWaveCounter].m_uiNpcEntry, fPosX, fPosY, fPosZ, aSpawnLocations[uiPos].m_fO, TEMPSPAWN_DEAD_DESPAWN, 0))
         {
             pSummoned->SetWalk(false);
             pGo->GetContactPoint(pSummoned, fTargetPosX, fTargetPosY, fTargetPosZ);

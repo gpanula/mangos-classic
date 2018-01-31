@@ -152,6 +152,10 @@ struct npc_disciple_of_naralexAI : public npc_escortAI
             m_creature->SetLootRecipient(nullptr);
             m_creature->DeleteThreatList();
             m_creature->CombatStop(false);
+
+            if (m_creature->isAlive())
+                m_creature->GetMotionMaster()->MovementExpired(true);
+
             Reset();
 
             // Remove running
@@ -228,7 +232,7 @@ struct npc_disciple_of_naralexAI : public npc_escortAI
         float fX, fY, fZ;
         m_creature->GetNearPoint(m_creature, fX, fY, fZ, 0, fDistance, fAngle);
 
-        m_creature->SummonCreature(uiEntry, fX, fY, fZ, 0, TEMPSUMMON_TIMED_OOC_DESPAWN, 20000);
+        m_creature->SummonCreature(uiEntry, fX, fY, fZ, 0, TEMPSPAWN_TIMED_OOC_DESPAWN, 20000);
     }
 
     void UpdateEscortAI(const uint32 uiDiff) override
@@ -239,7 +243,7 @@ struct npc_disciple_of_naralexAI : public npc_escortAI
             {
                 switch (m_uiPoint)
                 {
-                        // Corner stop -> raptors
+                    // Corner stop -> raptors
                     case 7:
                         switch (m_uiSubeventPhase)
                         {
@@ -258,7 +262,7 @@ struct npc_disciple_of_naralexAI : public npc_escortAI
                                 break;
                         }
                         break;
-                        // Circle stop -> vipers
+                    // Circle stop -> vipers
                     case 15:
                         switch (m_uiSubeventPhase)
                         {
@@ -292,7 +296,7 @@ struct npc_disciple_of_naralexAI : public npc_escortAI
                                 break;
                         }
                         break;
-                        // Chamber stop -> ritual and final boss
+                    // Chamber stop -> ritual and final boss
                     case 32:
                         switch (m_uiSubeventPhase)
                         {

@@ -54,17 +54,6 @@ struct npc_bartlebyAI : public ScriptedAI
 
     void Reset() override {}
 
-    void AttackedBy(Unit* pAttacker) override
-    {
-        if (m_creature->getVictim())
-            return;
-
-        if (m_creature->IsFriendlyTo(pAttacker))
-            return;
-
-        AttackStart(pAttacker);
-    }
-
     void DamageTaken(Unit* pDoneBy, uint32& uiDamage, DamageEffectType /*damagetype*/) override
     {
         if (uiDamage > m_creature->GetHealth() || ((m_creature->GetHealth() - uiDamage) * 100 / m_creature->GetMaxHealth() < 15))
@@ -112,17 +101,6 @@ struct npc_dashel_stonefistAI : public ScriptedAI
     }
 
     void Reset() override {}
-
-    void AttackedBy(Unit* pAttacker) override
-    {
-        if (m_creature->getVictim())
-            return;
-
-        if (m_creature->IsFriendlyTo(pAttacker))
-            return;
-
-        AttackStart(pAttacker);
-    }
 
     void DamageTaken(Unit* pDoneBy, uint32& uiDamage, DamageEffectType /*damagetype*/) override
     {
@@ -292,7 +270,7 @@ struct npc_squire_roweAI : public npc_escortAI, private DialogueHelper
                 break;
             case 3:
                 m_creature->SetStandState(UNIT_STAND_STATE_STAND);
-                m_creature->SummonCreature(NPC_WINDSOR, aWindsorSpawnLoc[0], aWindsorSpawnLoc[1], aWindsorSpawnLoc[2], 0, TEMPSUMMON_CORPSE_DESPAWN, 0);
+                m_creature->SummonCreature(NPC_WINDSOR, aWindsorSpawnLoc[0], aWindsorSpawnLoc[1], aWindsorSpawnLoc[2], 0, TEMPSPAWN_CORPSE_DESPAWN, 0);
                 break;
             case 6:
                 DoScriptText(SAY_SIGNAL_SENT, m_creature);
@@ -311,7 +289,7 @@ struct npc_squire_roweAI : public npc_escortAI, private DialogueHelper
                 if (Creature* pWindsor = m_creature->GetMap()->GetCreature(m_windsorGuid))
                 {
                     pWindsor->Unmount();
-                    m_creature->SummonCreature(NPC_WINDSOR_MOUNT, pWindsor->GetPositionX() - 1.0f, pWindsor->GetPositionY() + 1.0f, pWindsor->GetPositionZ(), pWindsor->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 30000);
+                    m_creature->SummonCreature(NPC_WINDSOR_MOUNT, pWindsor->GetPositionX() - 1.0f, pWindsor->GetPositionY() + 1.0f, pWindsor->GetPositionZ(), pWindsor->GetOrientation(), TEMPSPAWN_TIMED_DESPAWN, 30000);
                 }
                 break;
             }
@@ -638,7 +616,7 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
                     // Summon 3 guards on each side and move Jonathan in the middle
                     for (uint8 i = 0; i < MAX_ROYAL_GUARDS; ++i)
                     {
-                        if (Creature* pTemp = m_creature->SummonCreature(NPC_GUARD_ROYAL, aGuardLocations[i][0], aGuardLocations[i][1], aGuardLocations[i][2], aGuardLocations[i][3], TEMPSUMMON_TIMED_DESPAWN, 180000))
+                        if (Creature* pTemp = m_creature->SummonCreature(NPC_GUARD_ROYAL, aGuardLocations[i][0], aGuardLocations[i][1], aGuardLocations[i][2], aGuardLocations[i][3], TEMPSPAWN_TIMED_DESPAWN, 180000))
                             m_guardsGuid[i] = pTemp->GetObjectGuid();
                     }
 
@@ -709,7 +687,7 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
 
         switch (iEntry)
         {
-                // Set orientation and prepare the npcs for the next event
+            // Set orientation and prepare the npcs for the next event
             case SAY_WINDSOR_GET_READY:
                 m_creature->SetFacingTo(0.6f);
                 break;

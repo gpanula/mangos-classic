@@ -64,7 +64,7 @@ void instance_ruins_of_ahnqiraj::OnCreatureCreate(Creature* pCreature)
         case NPC_CAPTAIN_DRENN:
         case NPC_CAPTAIN_TUUBID:
         case NPC_CAPTAIN_QEEZ:
-            m_mNpcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+            m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
             break;
         case NPC_KALDOREI_ELITE:
             m_lKaldoreiGuidList.push_back(pCreature->GetObjectGuid());
@@ -96,7 +96,7 @@ void instance_ruins_of_ahnqiraj::OnCreatureEvade(Creature* pCreature)
         case NPC_RAJAXX:
             // Rajaxx yells on evade
             DoScriptText(SAY_DEAGGRO, pCreature);
-            // no break;
+        // no break;
         case NPC_COLONEL_ZERRAN:
         case NPC_MAJOR_PAKKON:
         case NPC_MAJOR_YEGGETH:
@@ -215,7 +215,7 @@ void instance_ruins_of_ahnqiraj::DoSapwnAndorovIfCan()
         return;
 
     for (uint8 i = 0; i < MAX_HELPERS; ++i)
-        pPlayer->SummonCreature(aAndorovSpawnLocs[i].m_uiEntry, aAndorovSpawnLocs[i].m_fX, aAndorovSpawnLocs[i].m_fY, aAndorovSpawnLocs[i].m_fZ, aAndorovSpawnLocs[i].m_fO, TEMPSUMMON_DEAD_DESPAWN, 0);
+        pPlayer->SummonCreature(aAndorovSpawnLocs[i].m_uiEntry, aAndorovSpawnLocs[i].m_fX, aAndorovSpawnLocs[i].m_fY, aAndorovSpawnLocs[i].m_fZ, aAndorovSpawnLocs[i].m_fO, TEMPSPAWN_DEAD_DESPAWN, 0);
 }
 
 void instance_ruins_of_ahnqiraj::Load(const char* chrIn)

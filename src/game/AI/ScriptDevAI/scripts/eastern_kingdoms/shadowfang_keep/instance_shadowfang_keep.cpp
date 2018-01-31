@@ -53,7 +53,7 @@ void instance_shadowfang_keep::OnCreatureCreate(Creature* pCreature)
         default:
             return;
     }
-    m_mNpcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+    m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
 }
 
 void instance_shadowfang_keep::OnObjectCreate(GameObject* pGo)
@@ -64,8 +64,8 @@ void instance_shadowfang_keep::OnObjectCreate(GameObject* pGo)
             if (m_auiEncounter[0] == DONE)
                 pGo->SetGoState(GO_STATE_ACTIVE);
             break;
-            // For this we ignore voidwalkers, because if the server restarts
-            // They won't be there, but Fenrus is dead so the door can't be opened!
+        // For this we ignore voidwalkers, because if the server restarts
+        // They won't be there, but Fenrus is dead so the door can't be opened!
         case GO_SORCERER_DOOR:
             if (m_auiEncounter[2] == DONE)
                 pGo->SetGoState(GO_STATE_ACTIVE);
@@ -80,7 +80,7 @@ void instance_shadowfang_keep::OnObjectCreate(GameObject* pGo)
         default:
             return;
     }
-    m_mGoEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
+    m_goEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
 }
 
 void instance_shadowfang_keep::DoSpeech()
@@ -113,7 +113,7 @@ void instance_shadowfang_keep::SetData(uint32 uiType, uint32 uiData)
             if (uiData == DONE)
             {
                 if (Creature* pFenrus = GetSingleCreatureFromStorage(NPC_FENRUS))
-                    pFenrus->SummonCreature(NPC_ARCHMAGE_ARUGAL, -136.89f, 2169.17f, 136.58f, 2.794f, TEMPSUMMON_TIMED_DESPAWN, 30000);
+                    pFenrus->SummonCreature(NPC_ARCHMAGE_ARUGAL, -136.89f, 2169.17f, 136.58f, 2.794f, TEMPSPAWN_TIMED_DESPAWN, 30000);
             }
             m_auiEncounter[2] = uiData;
             break;

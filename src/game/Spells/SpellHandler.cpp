@@ -196,7 +196,7 @@ void WorldSession::HandleOpenItemOpcode(WorldPacket& recvPacket)
         if (!lockInfo)
         {
             pUser->SendEquipError(EQUIP_ERR_ITEM_LOCKED, pItem, nullptr);
-            sLog.outError("WORLD::OpenItem: item [guid = %u] has an unknown lockId: %u!", pItem->GetGUIDLow() , lockId);
+            sLog.outError("WORLD::OpenItem: item [guid = %u] has an unknown lockId: %u!", pItem->GetGUIDLow(), lockId);
             return;
         }
 
@@ -363,7 +363,11 @@ void WorldSession::HandleCastSpellOpcode(WorldPacket& recvPacket)
     // client provided targets
     SpellCastTargets targets;
 
+#ifdef BUILD_PLAYERBOT
+    recvPacket >> targets.ReadForCaster(mover);
+#else
     recvPacket >> targets.ReadForCaster(_player);
+#endif
 
     // auto-selection buff level base at target level (in spellInfo)
     if (Unit* target = targets.getUnitTarget())
@@ -481,7 +485,7 @@ void WorldSession::HandlePetCancelAuraOpcode(WorldPacket& recvPacket)
         return;
     }
 
-    if (guid != GetPlayer()->GetPetGuid() && guid != GetPlayer()->GetCharmGuid())
+    if (guid != GetPlayer()->GetPetGuid() && !GetPlayer()->HasCharm(guid))
     {
         sLog.outError("HandlePetCancelAura. %s isn't pet of %s", guid.GetString().c_str(), GetPlayer()->GetGuidStr().c_str());
         return;
@@ -495,7 +499,8 @@ void WorldSession::HandlePetCancelAuraOpcode(WorldPacket& recvPacket)
 
     pet->RemoveAurasDueToSpell(spellId);
 
-    pet->AddCreatureSpellCooldown(spellId);
+    // TODO: check if its correctly handled in aura remove
+    //pet->AddCreatureSpellCooldown(spellId);
 }
 
 void WorldSession::HandleCancelGrowthAuraOpcode(WorldPacket& /*recvPacket*/)

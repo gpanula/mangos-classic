@@ -40,7 +40,7 @@ void DynamicObject::AddToWorld()
     if (!IsInWorld())
         GetMap()->GetObjectsStore().insert<DynamicObject>(GetObjectGuid(), (DynamicObject*)this);
 
-    Object::AddToWorld();
+    WorldObject::AddToWorld();
 }
 
 void DynamicObject::RemoveFromWorld()
@@ -70,7 +70,7 @@ bool DynamicObject::Create(uint32 guidlow, Unit* caster, uint32 spellId, SpellEf
     SetEntry(spellId);
     SetObjectScale(DEFAULT_OBJECT_SCALE);
 
-    SetGuidValue(DYNAMICOBJECT_CASTER, caster->GetObjectGuid());
+    SetCasterGuid(caster->GetObjectGuid());
 
     /* Bytes field, so it's really 4 bit fields. These flags are unknown, but we do know that 0x00000001 is set for most.
        Farsight for example, does not have this flag, instead it has 0x80000002.
@@ -218,3 +218,4 @@ bool DynamicObject::IsFriendlyTo(Unit const* unit) const
     else
         return true;
 }
+

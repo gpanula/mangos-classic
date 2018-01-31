@@ -262,10 +262,11 @@ struct npc_doctorAI : public ScriptedAI
 
 struct npc_injured_patientAI : public ScriptedAI
 {
-    npc_injured_patientAI(Creature* pCreature) : ScriptedAI(pCreature) {Reset();}
+    npc_injured_patientAI(Creature* pCreature) : ScriptedAI(pCreature), isSaved(false) {Reset();}
 
     ObjectGuid m_doctorGuid;
     Location* m_pCoord;
+    bool isSaved;
 
     void Reset() override
     {
@@ -281,7 +282,7 @@ struct npc_injured_patientAI : public ScriptedAI
 
         switch (m_creature->GetEntry())
         {
-                // lower max health
+            // lower max health
             case 12923:
             case 12938:                                     // Injured Soldier
                 m_creature->SetHealth(uint32(m_creature->GetMaxHealth()*.75));
@@ -325,6 +326,7 @@ struct npc_injured_patientAI : public ScriptedAI
             }
 
             m_creature->SetWalk(false);
+            isSaved = true;
 
             switch (m_creature->GetEntry())
             {
@@ -344,6 +346,10 @@ struct npc_injured_patientAI : public ScriptedAI
 
     void UpdateAI(const uint32 uiDiff) override
     {
+        // Don't reduce health if already healed
+        if (isSaved)
+            return;
+
         // lower HP on every world tick makes it a useful counter, not officlone though
         uint32 uiHPLose = uint32(0.05f * uiDiff);
         if (m_creature->isAlive() && m_creature->GetHealth() > 1 + uiHPLose)
@@ -481,7 +487,7 @@ void npc_doctorAI::UpdateAI(const uint32 uiDiff)
                     return;
             }
 
-            if (Creature* Patient = m_creature->SummonCreature(patientEntry, (*itr)->x, (*itr)->y, (*itr)->z, (*itr)->o, TEMPSUMMON_TIMED_OOC_DESPAWN, 5000))
+            if (Creature* Patient = m_creature->SummonCreature(patientEntry, (*itr)->x, (*itr)->y, (*itr)->z, (*itr)->o, TEMPSPAWN_TIMED_OOC_DESPAWN, 5000))
             {
                 // 2.4.3, this flag appear to be required for client side item->spell to work (TARGET_SINGLE_FRIEND)
                 Patient->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PVP);

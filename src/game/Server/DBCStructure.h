@@ -312,16 +312,29 @@ struct FactionEntry
 
         return -1;
     }
+    bool HasReputation() const { return reputationListID >= 0; }
 };
+
+/*
+// NOTE: FactionGroup.dbc - currently unused, please refer to related hardcoded enum FactionGroupMask
+struct FactionGroupEntry
+{
+    uint32      ID;                                         // 0        m_ID
+    uint32      maskID;                                     // 1        m_maskID       index of the bit to check for in the faction group mask
+    char*       internalName;                               // 2        m_internalName
+    // char*       name[8];                                 // 3-10     m_name_lang    localized display name in the UI
+    // 11 string flags
+};
+*/
 
 struct FactionTemplateEntry
 {
     uint32      ID;                                         // 0
     uint32      faction;                                    // 1
     uint32      factionFlags;                               // 2 specific flags for that faction
-    uint32      ourMask;                                    // 3 if mask set (see FactionMasks) then faction included in masked team
-    uint32      friendlyMask;                               // 4 if mask set (see FactionMasks) then faction friendly to masked team
-    uint32      hostileMask;                                // 5 if mask set (see FactionMasks) then faction hostile to masked team
+    uint32      factionGroupMask;                           // 3 if mask set (see FactionGroupMask) then faction included in masked group
+    uint32      friendGroupMask;                            // 4 if mask set (see FactionGroupMask) then faction friendly to masked group
+    uint32      enemyGroupMask;                             // 5 if mask set (see FactionGroupMask) then faction hostile to masked group
     uint32      enemyFaction[4];                            // 6-9
     uint32      friendFaction[4];                           // 10-13
     //-------------------------------------------------------  end structure
@@ -338,7 +351,7 @@ struct FactionTemplateEntry
                 if (friendFaction[i] == entry.faction)
                     return true;
         }
-        return (friendlyMask & entry.ourMask) || (ourMask & entry.friendlyMask);
+        return (friendGroupMask & entry.factionGroupMask) || (factionGroupMask & entry.friendGroupMask);
     }
     bool IsHostileTo(FactionTemplateEntry const& entry) const
     {
@@ -351,15 +364,15 @@ struct FactionTemplateEntry
                 if (friendFaction[i] == entry.faction)
                     return false;
         }
-        return (hostileMask & entry.ourMask) != 0;
+        return (enemyGroupMask & entry.factionGroupMask) != 0;
     }
-    bool IsHostileToPlayers() const { return (hostileMask & FACTION_MASK_PLAYER) != 0; }
+    bool IsHostileToPlayers() const { return (enemyGroupMask & FACTION_GROUP_MASK_PLAYER) != 0; }
     bool IsNeutralToAll() const
     {
         for (int i = 0; i < 4; ++i)
             if (enemyFaction[i] != 0)
                 return false;
-        return hostileMask == 0 && friendlyMask == 0;
+        return enemyGroupMask == 0 && friendGroupMask == 0;
     }
     bool IsContestedGuardFaction() const { return (factionFlags & FACTION_TEMPLATE_FLAG_CONTESTED_GUARD) != 0; }
 };
@@ -565,7 +578,7 @@ struct ClassFamilyMask
     bool Empty() const { return Flags == 0; }
     bool operator!() const { return Empty(); }
     operator void const* () const { return Empty() ? nullptr : this; } // for allow normal use in if(mask)
-    bool operator== (const ClassFamilyMask &another) const { return (Flags == another.Flags); }
+    bool operator== (const ClassFamilyMask& another) const { return (Flags == another.Flags); }
 
     bool IsFitToFamilyMask(uint64 familyFlags) const { return !!(Flags & familyFlags); }
     bool IsFitToFamilyMask(ClassFamilyMask const& mask) const { return !!(Flags & mask.Flags); }
@@ -921,7 +934,7 @@ struct ItemCategorySpellPair
     uint32 spellId;
     uint32 itemId;
     ItemCategorySpellPair(uint32 _spellId, uint32 _itemId) : spellId(_spellId), itemId(_itemId) {}
-    bool operator <(ItemCategorySpellPair const &pair) const { return spellId == pair.spellId ? itemId < pair.itemId : spellId < pair.spellId; }
+    bool operator <(ItemCategorySpellPair const& pair) const { return spellId == pair.spellId ? itemId < pair.itemId : spellId < pair.spellId; }
 };
 
 typedef std::set<ItemCategorySpellPair> ItemSpellCategorySet;
@@ -954,17 +967,7 @@ struct TaxiPathBySourceAndDestination
 typedef std::map<uint32, TaxiPathBySourceAndDestination> TaxiPathSetForSource;
 typedef std::map<uint32, TaxiPathSetForSource> TaxiPathSetBySource;
 
-struct TaxiPathNodePtr
-{
-    TaxiPathNodePtr() : i_ptr(nullptr) {}
-    TaxiPathNodePtr(TaxiPathNodeEntry const* ptr) : i_ptr(ptr) {}
-
-    TaxiPathNodeEntry const* i_ptr;
-
-    operator TaxiPathNodeEntry const& () const { return *i_ptr; }
-};
-
-typedef Path<TaxiPathNodePtr, TaxiPathNodeEntry const> TaxiPathNodeList;
+typedef std::vector<TaxiPathNodeEntry const*> TaxiPathNodeList;
 typedef std::vector<TaxiPathNodeList> TaxiPathNodesByPath;
 
 #define TaxiMaskSize 8

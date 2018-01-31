@@ -370,18 +370,6 @@ struct mob_arugal_voidwalkerAI : public ScriptedAI
         m_uiCurrentPoint = uiNewPoint;
         m_bReverse = bReverse;
     }
-
-    void EnterEvadeMode() override
-    {
-        m_creature->RemoveAllAurasOnEvade();
-        m_creature->DeleteThreatList();
-        m_creature->CombatStop(true);
-        m_creature->LoadCreatureAddon(true);
-
-        m_creature->SetLootRecipient(nullptr);
-
-        Reset();
-    }
 };
 
 CreatureAI* GetAI_mob_arugal_voidwalker(Creature* pCreature)
@@ -520,7 +508,7 @@ struct boss_arugalAI : public ScriptedAI
                         for (uint8 i = 0; i < 4; ++i)
                         {
                             pVoidwalker = m_creature->SummonCreature(NPC_VOIDWALKER, VWSpawns[i].fX,
-                                          VWSpawns[i].fY, VWSpawns[i].fZ, VWSpawns[i].fO, TEMPSUMMON_DEAD_DESPAWN, 1);
+                                          VWSpawns[i].fY, VWSpawns[i].fZ, VWSpawns[i].fO, TEMPSPAWN_DEAD_DESPAWN, 1);
 
                             if (!pVoidwalker)
                                 continue;
@@ -883,16 +871,6 @@ struct npc_deathstalker_vincentAI : public ScriptedAI
             EnterEvadeMode();
 
         ScriptedAI::UpdateAI(uiDiff);
-    }
-
-    void EnterEvadeMode() override
-    {
-        m_creature->RemoveAllAuras();
-        m_creature->DeleteThreatList();
-        m_creature->CombatStop(true);
-        m_creature->LoadCreatureAddon(true);
-        m_creature->SetLootRecipient(nullptr);
-        Reset();
     }
 };
 

@@ -39,6 +39,10 @@
 #include "Chat/Chat.h"
 #include "Spells/SpellMgr.h"
 
+#ifdef BUILD_PLAYERBOT
+#include "PlayerBot/Base/PlayerbotMgr.h"
+#endif
+
 // config option SkipCinematics supported values
 enum CinematicsSkipMode
 {
@@ -86,7 +90,7 @@ bool LoginQueryHolder::Initialize()
     res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADACTIONS,         "SELECT button,action,type FROM character_action WHERE guid = '%u' ORDER BY button", m_guid.GetCounter());
     res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADSOCIALLIST,      "SELECT friend,flags FROM character_social WHERE guid = '%u' LIMIT 255", m_guid.GetCounter());
     res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADHOMEBIND,        "SELECT map,zone,position_x,position_y,position_z FROM character_homebind WHERE guid = '%u'", m_guid.GetCounter());
-    res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADSPELLCOOLDOWNS,  "SELECT spell,item,time FROM character_spell_cooldown WHERE guid = '%u'", m_guid.GetCounter());
+    res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADSPELLCOOLDOWNS,  "SELECT SpellId, SpellExpireTime, Category, CategoryExpireTime, ItemId FROM character_spell_cooldown WHERE LowGuid = '%u'", m_guid.GetCounter());
     res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADGUILD,           "SELECT guildid,rank FROM guild_member WHERE guid = '%u'", m_guid.GetCounter());
     res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADBGDATA,          "SELECT instance_id, team, join_x, join_y, join_z, join_o, join_map FROM character_battleground_data WHERE guid = '%u'", m_guid.GetCounter());
     res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADSKILLS,          "SELECT skill, value, max FROM character_skills WHERE guid = '%u'", m_guid.GetCounter());
@@ -115,6 +119,32 @@ class CharacterHandler
             if (WorldSession* session = sWorld.FindSession(((LoginQueryHolder*)holder)->GetAccountId()))
                 session->HandlePlayerLogin((LoginQueryHolder*)holder);
         }
+#ifdef BUILD_PLAYERBOT
+        // This callback is different from the normal HandlePlayerLoginCallback in that it
+        // sets up the bot's world session and also stores the pointer to the bot player in the master's
+        // world session m_playerBots map
+        void HandlePlayerBotLoginCallback(QueryResult* /*dummy*/, SqlQueryHolder* holder)
+        {
+            if (!holder)
+                return;
+
+            LoginQueryHolder* lqh = (LoginQueryHolder*) holder;
+
+            WorldSession* masterSession = sWorld.FindSession(lqh->GetAccountId());
+
+            if (! masterSession || sObjectMgr.GetPlayer(lqh->GetGuid()))
+            {
+                delete holder;
+                return;
+            }
+
+            // The bot's WorldSession is owned by the bot's Player object
+            // The bot's WorldSession is deleted by PlayerbotMgr::LogoutPlayerBot
+            WorldSession* botSession = new WorldSession(lqh->GetAccountId(), nullptr, SEC_PLAYER, 0, LOCALE_enUS);
+            botSession->HandlePlayerLogin(lqh); // will delete lqh
+            masterSession->GetPlayer()->GetPlayerbotMgr()->OnBotLogin(botSession->GetPlayer());
+        }
+#endif
 } chrHandler;
 
 void WorldSession::HandleCharEnum(QueryResult* result)
@@ -345,7 +375,7 @@ void WorldSession::HandleCharCreateOpcode(WorldPacket& recv_data)
     data << (uint8)CHAR_CREATE_SUCCESS;
     SendPacket(data);
 
-    const std::string &IP_str = GetRemoteAddress();
+    const std::string& IP_str = GetRemoteAddress();
     BASIC_LOG("Account: %d (IP: %s) Create Character:[%s] (guid: %u)", GetAccountId(), IP_str.c_str(), name.c_str(), pNewChar->GetGUIDLow());
     sLog.outChar("Account: %d (IP: %s) Create Character:[%s] (guid: %u)", GetAccountId(), IP_str.c_str(), name.c_str(), pNewChar->GetGUIDLow());
 
@@ -431,6 +461,29 @@ void WorldSession::HandlePlayerLoginOpcode(WorldPacket& recv_data)
     CharacterDatabase.DelayQueryHolder(&chrHandler, &CharacterHandler::HandlePlayerLoginCallback, holder);
 }
 
+#ifdef BUILD_PLAYERBOT
+// Can't easily reuse HandlePlayerLoginOpcode for logging in bots because it assumes
+// a WorldSession exists for the bot. The WorldSession for a bot is created after the character is loaded.
+void PlayerbotMgr::LoginPlayerBot(ObjectGuid playerGuid)
+{
+    // has bot already been added?
+    if (sObjectMgr.GetPlayer(playerGuid))
+        return;
+
+    uint32 accountId = sObjectMgr.GetPlayerAccountIdByGUID(playerGuid);
+    if (accountId == 0)
+        return;
+
+    LoginQueryHolder* holder = new LoginQueryHolder(accountId, playerGuid);
+    if (!holder->Initialize())
+    {
+        delete holder;                                      // delete all unprocessed queries
+        return;
+    }
+    CharacterDatabase.DelayQueryHolder(&chrHandler, &CharacterHandler::HandlePlayerBotLoginCallback, holder);
+}
+#endif
+
 void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
 {
     ObjectGuid playerGuid = holder->GetGuid();
@@ -463,32 +516,9 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
         data << uint32(0);
     SendPacket(data);
 
-    // Send MOTD (1.12.1 not have SMSG_MOTD, so do it in another way)
-    {
-        uint32 linecount = 0;
-        std::string str_motd = sWorld.GetMotd();
-        std::string::size_type pos, nextpos;
-        std::string motd;
-
-        pos = 0;
-        while ((nextpos = str_motd.find('@', pos)) != std::string::npos)
-        {
-            if (nextpos != pos)
-            {
-                ChatHandler(pCurrChar).PSendSysMessage("%s", str_motd.substr(pos, nextpos - pos).c_str());
-                ++linecount;
-            }
-            pos = nextpos + 1;
-        }
-
-        if (pos < str_motd.length())
-        {
-            ChatHandler(pCurrChar).PSendSysMessage("%s", str_motd.substr(pos).c_str());
-            ++linecount;
-        }
-
-        DEBUG_LOG("WORLD: Sent motd (SMSG_MOTD)");
-    }
+    // Send Spam records
+    SendExpectedSpamRecords();
+    SendMotd(pCurrChar);
 
     // QueryResult *result = CharacterDatabase.PQuery("SELECT guildid,rank FROM guild_member WHERE guid = '%u'",pCurrChar->GetGUIDLow());
     QueryResult* resultGuild = holder->GetResult(PLAYER_LOGIN_QUERY_LOADGUILD);
@@ -609,10 +639,10 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
 
     // Set FFA PvP for non GM in non-rest mode
     if (sWorld.IsFFAPvPRealm() && !pCurrChar->isGameMaster() && !pCurrChar->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING))
-        pCurrChar->SetFFAPvP(true);
+        pCurrChar->SetPvPFreeForAll(true);
 
     if (pCurrChar->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_CONTESTED_PVP))
-        pCurrChar->SetContestedPvP();
+        pCurrChar->UpdatePvPContested(true);
 
     // Apply at_login requests
     if (pCurrChar->HasAtLoginFlag(AT_LOGIN_RESET_SPELLS))
@@ -625,6 +655,13 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
     {
         pCurrChar->resetTalents(true);
         SendNotification(LANG_RESET_TALENTS);               // we can use SMSG_TALENTS_INVOLUNTARILY_RESET here
+    }
+
+    if (pCurrChar->HasAtLoginFlag(AT_LOGIN_RESET_TAXINODES))
+    {
+        pCurrChar->InitTaxiNodes();
+        pCurrChar->RemoveAtLoginFlag(AT_LOGIN_RESET_TAXINODES, true);
+        SendNotification("Your taxi nodes have been reset.");
     }
 
     if (pCurrChar->HasAtLoginFlag(AT_LOGIN_FIRST))

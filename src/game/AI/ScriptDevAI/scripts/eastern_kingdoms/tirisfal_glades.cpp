@@ -52,7 +52,7 @@ bool GOUse_go_mausoleum_door(Player* pPlayer, GameObject* /*pGo*/)
     if (GameObject* pTrigger = GetClosestGameObjectWithEntry(pPlayer, GO_TRIGGER, 30.0f))
     {
         pTrigger->SetGoState(GO_STATE_READY);
-        pPlayer->SummonCreature(NPC_ULAG, 2390.26f, 336.47f, 40.01f, 2.26f, TEMPSUMMON_TIMED_OOC_OR_DEAD_DESPAWN, 300000);
+        pPlayer->SummonCreature(NPC_ULAG, 2390.26f, 336.47f, 40.01f, 2.26f, TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, 300000);
         return false;
     }
 
@@ -101,15 +101,8 @@ struct npc_calvin_montagueAI : public ScriptedAI
     {
         m_uiPhase = 0;
         m_uiPhaseTimer = 5000;
+        SetReactState(REACT_AGGRESSIVE);
         m_playerGuid.Clear();
-    }
-
-    void AttackedBy(Unit* pAttacker) override
-    {
-        if (m_creature->getVictim() || m_creature->IsFriendlyTo(pAttacker))
-            return;
-
-        AttackStart(pAttacker);
     }
 
     void DamageTaken(Unit* pDoneBy, uint32& uiDamage, DamageEffectType /*damagetype*/) override
@@ -119,6 +112,7 @@ struct npc_calvin_montagueAI : public ScriptedAI
             uiDamage = 0;
 
             m_creature->CombatStop(true);
+            SetReactState(REACT_PASSIVE);
 
             m_uiPhase = 1;
 

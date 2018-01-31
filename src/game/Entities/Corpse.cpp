@@ -49,7 +49,7 @@ void Corpse::AddToWorld()
     if (!IsInWorld())
         sObjectAccessor.AddObject(this);
 
-    Object::AddToWorld();
+    WorldObject::AddToWorld();
 }
 
 void Corpse::RemoveFromWorld()
@@ -90,7 +90,7 @@ bool Corpse::Create(uint32 guidlow, Player* owner)
     SetFloatValue(CORPSE_FIELD_POS_Y, GetPositionY());
     SetFloatValue(CORPSE_FIELD_POS_Z, GetPositionZ());
     SetFloatValue(CORPSE_FIELD_FACING, GetOrientation());
-    SetGuidValue(CORPSE_FIELD_OWNER, owner->GetObjectGuid());
+    SetOwnerGuid(owner->GetObjectGuid());
 
     m_grid = MaNGOS::ComputeGridPair(GetPositionX(), GetPositionY());
 
@@ -186,7 +186,7 @@ bool Corpse::LoadFromDB(uint32 lowguid, Field* fields)
 
     // overwrite possible wrong/corrupted guid
     SetGuidValue(OBJECT_FIELD_GUID, guid);
-    SetGuidValue(CORPSE_FIELD_OWNER, playerGuid);
+    SetOwnerGuid(playerGuid);
 
     SetObjectScale(DEFAULT_OBJECT_SCALE);
 
@@ -248,6 +248,16 @@ bool Corpse::LoadFromDB(uint32 lowguid, Field* fields)
     m_grid = MaNGOS::ComputeGridPair(GetPositionX(), GetPositionY());
 
     return true;
+}
+
+uint32 Corpse::getFaction() const
+{
+    if (const uint8 race = getRace())
+    {
+        if (const ChrRacesEntry* raceEntry = sChrRacesStore.LookupEntry(race))
+            return raceEntry->FactionID;
+    }
+    return 0;
 }
 
 bool Corpse::isVisibleForInState(Player const* u, WorldObject const* viewPoint, bool inVisibleList) const

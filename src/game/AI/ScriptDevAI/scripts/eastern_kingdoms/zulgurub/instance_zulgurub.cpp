@@ -63,7 +63,7 @@ void instance_zulgurub::OnCreatureCreate(Creature* pCreature)
         case NPC_HAKKAR:
         case NPC_BLOODLORD_MANDOKIR:
         case NPC_MARLI:
-            m_mNpcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+            m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
             break;
         case NPC_PANTHER_TRIGGER:
             if (pCreature->GetPositionY() < -1626)
@@ -86,7 +86,7 @@ void instance_zulgurub::OnObjectCreate(GameObject* pGo)
             return;
     }
 
-    m_mGoEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
+    m_goEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
 }
 
 void instance_zulgurub::SetData(uint32 uiType, uint32 uiData)
@@ -119,7 +119,10 @@ void instance_zulgurub::SetData(uint32 uiType, uint32 uiData)
             break;
         case TYPE_ARLOKK:
             m_auiEncounter[uiType] = uiData;
-            DoUseDoorOrButton(GO_FORCEFIELD);
+            if (uiData == IN_PROGRESS)
+                DoUseDoorOrButton(GO_FORCEFIELD);
+            else if (GameObject* pForcefield = GetSingleGameObjectFromStorage(GO_FORCEFIELD))
+                pForcefield->ResetDoorOrButton();
             if (uiData == DONE)
                 DoLowerHakkarHitPoints();
             if (uiData == FAIL)

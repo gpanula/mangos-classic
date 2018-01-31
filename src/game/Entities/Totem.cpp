@@ -152,23 +152,6 @@ void Totem::UnSummon()
     AddObjectToRemoveList();
 }
 
-void Totem::SetOwner(Unit* owner)
-{
-    SetCreatorGuid(owner->GetObjectGuid());
-    SetOwnerGuid(owner->GetObjectGuid());
-    setFaction(owner->getFaction());
-    SetLevel(owner->getLevel());
-}
-
-Unit* Totem::GetOwner() const
-{
-    // Owner is actually creator in our case
-    if (ObjectGuid ownerGuid = GetCreatorGuid())
-        return ObjectAccessor::GetUnit(*this, ownerGuid);
-
-    return nullptr;
-}
-
 void Totem::SetTypeBySummonSpell(SpellEntry const* spellProto)
 {
     // Get spell casted by totem
@@ -181,6 +164,14 @@ void Totem::SetTypeBySummonSpell(SpellEntry const* spellProto)
     }
     if (spellProto->SpellIconID == 2056)
         m_type = TOTEM_STATUE;                              // Jewelery statue
+}
+
+Player* Totem::GetSpellModOwner() const
+{
+    Unit* owner = GetOwner();
+    if (owner && owner->GetTypeId() == TYPEID_PLAYER)
+        return static_cast<Player*>(owner);
+    return nullptr;
 }
 
 float Totem::GetCritChance(WeaponAttackType attackType) const
@@ -199,7 +190,7 @@ float Totem::GetCritChance(SpellSchoolMask schoolMask) const
     return Creature::GetCritChance(schoolMask);
 }
 
-float Totem::GetCritMultiplier(SpellSchoolMask dmgSchoolMask, uint32 creatureTypeMask, const SpellEntry *spell, bool heal) const
+float Totem::GetCritMultiplier(SpellSchoolMask dmgSchoolMask, uint32 creatureTypeMask, const SpellEntry* spell, bool heal) const
 {
     // Totems use owner's crit multiplier
     if (const Unit* owner = GetOwner())

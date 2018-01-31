@@ -205,7 +205,7 @@ struct boss_anubrekhanAI : public ScriptedAI
             if (m_uiSummonTimer <= uiDiff)
             {
                 // Workaround for the not existing spell
-                m_creature->SummonCreature(NPC_CRYPT_GUARD, aCryptGuardLoc[0], aCryptGuardLoc[1], aCryptGuardLoc[2], aCryptGuardLoc[3], TEMPSUMMON_TIMED_OOC_OR_DEAD_DESPAWN, 30000);
+                m_creature->SummonCreature(NPC_CRYPT_GUARD, aCryptGuardLoc[0], aCryptGuardLoc[1], aCryptGuardLoc[2], aCryptGuardLoc[3], TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, 30000);
                 m_uiSummonTimer = 0;
             }
             else
@@ -232,7 +232,7 @@ bool GOUse_go_anub_door(Player* pPlayer, GameObject* pGo)
             if (Creature* pAnub = pInstance->GetSingleCreatureFromStorage(NPC_ANUB_REKHAN))
             {
                 if (boss_anubrekhanAI* pAnubAI = dynamic_cast<boss_anubrekhanAI*>(pAnub->AI()))
-                        pAnubAI->SendAIEvent(AI_EVENT_START_EVENT, pAnub, pAnub);
+                    pAnubAI->SendAIEvent(AI_EVENT_START_EVENT, pAnub, pAnub);
             }
         }
     }

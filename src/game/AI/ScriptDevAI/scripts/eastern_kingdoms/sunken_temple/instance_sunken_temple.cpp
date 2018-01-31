@@ -72,7 +72,7 @@ void instance_sunken_temple::OnObjectCreate(GameObject* pGo)
         default:
             return;
     }
-    m_mGoEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
+    m_goEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
 }
 
 void instance_sunken_temple::OnCreatureCreate(Creature* pCreature)
@@ -90,7 +90,7 @@ void instance_sunken_temple::OnCreatureCreate(Creature* pCreature)
         case NPC_JAMMALAN:
         case NPC_ATALARION:
         case NPC_SHADE_OF_ERANIKUS:
-            m_mNpcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+            m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
             break;
     }
 }
@@ -99,16 +99,16 @@ void instance_sunken_temple::OnCreatureEvade(Creature* pCreature)
 {
     switch (pCreature->GetEntry())
     {
-            // Hakkar Event Mobs: On Wipe set as failed!
+        // Hakkar Event Mobs: On Wipe set as failed!
         case NPC_BLOODKEEPER:
         case NPC_HAKKARI_MINION:
         case NPC_SUPPRESSOR:
         case NPC_AVATAR_OF_HAKKAR:
             SetData(TYPE_AVATAR, FAIL);
             break;
-            // Shade of Eranikus: prevent it to become unattackable after a wipe
+        // Shade of Eranikus: prevent it to become unattackable after a wipe
         case NPC_SHADE_OF_ERANIKUS:
-            pCreature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_OOC_NOT_ATTACKABLE);
+            pCreature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
             break;
     }
 }
@@ -125,7 +125,7 @@ void instance_sunken_temple::OnCreatureDeath(Creature* pCreature)
             m_bCanSummonBloodkeeper = true;
             break;
 
-            // Jammalain mini-bosses
+        // Jammalain mini-bosses
         case NPC_ZOLO:
         case NPC_GASHER:
         case NPC_LORO:
@@ -163,7 +163,7 @@ void instance_sunken_temple::SetData(uint32 uiType, uint32 uiData)
             if (uiData == DONE)
             {
                 if (Creature* pEranikus = GetSingleCreatureFromStorage(NPC_SHADE_OF_ERANIKUS))
-                    pEranikus->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_OOC_NOT_ATTACKABLE);
+                    pEranikus->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
             }
             m_auiEncounter[uiType] = uiData;
             break;
@@ -178,12 +178,12 @@ void instance_sunken_temple::SetData(uint32 uiType, uint32 uiData)
 
                 switch (m_uiFlameCounter)
                 {
-                        // Yells on each flame
-                        // TODO It might be possible that these yells should be ordered randomly, however this is the seen state
+                    // Yells on each flame
+                    // TODO It might be possible that these yells should be ordered randomly, however this is the seen state
                     case 1: DoScriptText(SAY_AVATAR_BRAZIER_1, pShade); break;
                     case 2: DoScriptText(SAY_AVATAR_BRAZIER_2, pShade); break;
                     case 3: DoScriptText(SAY_AVATAR_BRAZIER_3, pShade); break;
-                        // Summon the avatar of all flames are used
+                    // Summon the avatar of all flames are used
                     case MAX_FLAMES:
                         DoScriptText(SAY_AVATAR_BRAZIER_4, pShade);
                         pShade->CastSpell(pShade, SPELL_SUMMON_AVATAR, TRIGGERED_OLD_TRIGGERED);
@@ -218,9 +218,9 @@ void instance_sunken_temple::SetData(uint32 uiType, uint32 uiData)
                 if (!pPlayer)
                     return;
 
-                if (Creature* pShade = pPlayer->SummonCreature(NPC_SHADE_OF_HAKKAR, aSunkenTempleLocation[1].m_fX, aSunkenTempleLocation[1].m_fY, aSunkenTempleLocation[1].m_fZ, aSunkenTempleLocation[1].m_fO, TEMPSUMMON_MANUAL_DESPAWN, 0))
+                if (Creature* pShade = pPlayer->SummonCreature(NPC_SHADE_OF_HAKKAR, aSunkenTempleLocation[1].m_fX, aSunkenTempleLocation[1].m_fY, aSunkenTempleLocation[1].m_fZ, aSunkenTempleLocation[1].m_fO, TEMPSPAWN_MANUAL_DESPAWN, 0))
                 {
-                    m_mNpcEntryGuidStore[NPC_SHADE_OF_HAKKAR] = pShade->GetObjectGuid();
+                    m_npcEntryGuidStore[NPC_SHADE_OF_HAKKAR] = pShade->GetObjectGuid();
                     pShade->SetRespawnDelay(DAY);
                 }
 
@@ -276,7 +276,7 @@ void instance_sunken_temple::DoSpawnAtalarionIfCan()
     if (!pPlayer)
         return;
 
-    pPlayer->SummonCreature(NPC_ATALARION, aSunkenTempleLocation[0].m_fX, aSunkenTempleLocation[0].m_fY, aSunkenTempleLocation[0].m_fZ, aSunkenTempleLocation[0].m_fO, TEMPSUMMON_DEAD_DESPAWN, 0);
+    pPlayer->SummonCreature(NPC_ATALARION, aSunkenTempleLocation[0].m_fX, aSunkenTempleLocation[0].m_fY, aSunkenTempleLocation[0].m_fZ, aSunkenTempleLocation[0].m_fO, TEMPSPAWN_DEAD_DESPAWN, 0);
 
     // Spawn the idol of Hakkar
     DoRespawnGameObject(GO_IDOL_OF_HAKKAR, 30 * MINUTE);
@@ -374,12 +374,12 @@ void instance_sunken_temple::Update(uint32 uiDiff)
                 for (GuidVector::const_iterator itr = m_vuiCircleGUIDs.begin(); itr != m_vuiCircleGUIDs.end(); ++itr)
                 {
                     if (GameObject* pCircle = instance->GetGameObject(*itr))
-                        pShade->SummonCreature(NPC_HAKKARI_MINION, pCircle->GetPositionX(), pCircle->GetPositionY(), pCircle->GetPositionZ(), 0, TEMPSUMMON_DEAD_DESPAWN, 0);
+                        pShade->SummonCreature(NPC_HAKKARI_MINION, pCircle->GetPositionX(), pCircle->GetPositionY(), pCircle->GetPositionZ(), 0, TEMPSPAWN_DEAD_DESPAWN, 0);
                 }
 
                 // Summon Bloodkeeper at random circle
                 if (GameObject* pCircle = instance->GetGameObject(m_vuiCircleGUIDs[urand(0, m_vuiCircleGUIDs.size() - 1)]))
-                    pShade->SummonCreature(NPC_BLOODKEEPER, pCircle->GetPositionX(), pCircle->GetPositionY(), pCircle->GetPositionZ(), 0, TEMPSUMMON_DEAD_DESPAWN, 0);
+                    pShade->SummonCreature(NPC_BLOODKEEPER, pCircle->GetPositionX(), pCircle->GetPositionY(), pCircle->GetPositionZ(), 0, TEMPSPAWN_DEAD_DESPAWN, 0);
 
                 m_bCanSummonBloodkeeper = false;
                 m_bIsFirstHakkarWave = false;
@@ -394,7 +394,7 @@ void instance_sunken_temple::Update(uint32 uiDiff)
                 {
                     // Summon a Bloodkeeper
                     if (GameObject* pCircle = instance->GetGameObject(m_vuiCircleGUIDs[urand(0, m_vuiCircleGUIDs.size() - 1)]))
-                        pShade->SummonCreature(NPC_BLOODKEEPER, pCircle->GetPositionX(), pCircle->GetPositionY(), pCircle->GetPositionZ(), 0, TEMPSUMMON_DEAD_DESPAWN, 0);
+                        pShade->SummonCreature(NPC_BLOODKEEPER, pCircle->GetPositionX(), pCircle->GetPositionY(), pCircle->GetPositionZ(), 0, TEMPSPAWN_DEAD_DESPAWN, 0);
 
                     m_bCanSummonBloodkeeper = false;
                     --uiMaxSummons;
@@ -403,7 +403,7 @@ void instance_sunken_temple::Update(uint32 uiDiff)
                 for (uint8 i = 0; i < uiMaxSummons; ++i)
                 {
                     if (GameObject* pCircle = instance->GetGameObject(m_vuiCircleGUIDs[urand(0, m_vuiCircleGUIDs.size() - 1)]))
-                        pShade->SummonCreature(NPC_HAKKARI_MINION, pCircle->GetPositionX(), pCircle->GetPositionY(), pCircle->GetPositionZ(), 0, TEMPSUMMON_DEAD_DESPAWN, 0);
+                        pShade->SummonCreature(NPC_HAKKARI_MINION, pCircle->GetPositionX(), pCircle->GetPositionY(), pCircle->GetPositionZ(), 0, TEMPSPAWN_DEAD_DESPAWN, 0);
                 }
                 m_uiAvatarSummonTimer = urand(3000, 15000);
             }
@@ -426,7 +426,7 @@ void instance_sunken_temple::Update(uint32 uiDiff)
 
             // Summon npc at random door; movement and script handled in DB
             uint8 uiSummonLoc = urand(0, 1);
-            pShade->SummonCreature(NPC_SUPPRESSOR, aHakkariDoorLocations[uiSummonLoc].m_fX, aHakkariDoorLocations[uiSummonLoc].m_fY, aHakkariDoorLocations[uiSummonLoc].m_fZ, 0, TEMPSUMMON_DEAD_DESPAWN, 0);
+            pShade->SummonCreature(NPC_SUPPRESSOR, aHakkariDoorLocations[uiSummonLoc].m_fX, aHakkariDoorLocations[uiSummonLoc].m_fY, aHakkariDoorLocations[uiSummonLoc].m_fZ, 0, TEMPSPAWN_DEAD_DESPAWN, 0);
 
             // This timer is finished now
             m_uiSupressorTimer = 0;

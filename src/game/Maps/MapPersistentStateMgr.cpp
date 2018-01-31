@@ -633,12 +633,12 @@ MapPersistentState* MapPersistentStateManager::AddPersistentState(MapEntry const
         if (!resetTime)
         {
             // initialize reset time
-            // for normal instances if no creatures are killed the instance will reset in two hours
+            // for normal instances if no creatures are killed the instance will reset in 30 minutes
             if (mapEntry->map_type == MAP_RAID)
                 resetTime = m_Scheduler.GetResetTimeFor(mapEntry->MapID);
             else
             {
-                resetTime = time(nullptr) + 2 * HOUR;
+                resetTime = time(nullptr) + NORMAL_INSTANCE_RESET_TIME;
                 // normally this will be removed soon after in DungeonMap::Add, prevent error
                 m_Scheduler.ScheduleReset(true, resetTime, DungeonResetEvent(RESET_EVENT_NORMAL_DUNGEON, mapEntry->MapID, instanceId));
             }
@@ -916,13 +916,13 @@ void MapPersistentStateManager::_ResetOrWarnAll(uint32 mapid, bool warn, uint32 
         }
 
         // remove all binds for online player
-        std::list<DungeonPersistentState *> unbindList;
+        std::list<DungeonPersistentState*> unbindList;
 
         for (PersistentStateMap::iterator itr = m_instanceSaveByInstanceId.begin(); itr != m_instanceSaveByInstanceId.end(); ++itr)
             if (itr->second->GetMapId() == mapid)
-                unbindList.push_back((DungeonPersistentState *)itr->second);
+                unbindList.push_back((DungeonPersistentState*)itr->second);
 
-        for (std::list<DungeonPersistentState *>::iterator itr = unbindList.begin(); itr != unbindList.end(); itr++)
+        for (std::list<DungeonPersistentState*>::iterator itr = unbindList.begin(); itr != unbindList.end(); itr++)
             (*itr)->UnbindThisState();
 
         // reset maps, teleport player automaticaly to their homebinds and unload maps

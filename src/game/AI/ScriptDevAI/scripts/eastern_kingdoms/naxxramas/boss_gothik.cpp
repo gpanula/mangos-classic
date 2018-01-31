@@ -257,7 +257,7 @@ struct boss_gothikAI : public ScriptedAI
         for (GuidList::iterator itr = plSummonPosGuids->begin(); itr != plSummonPosGuids->end(); ++itr)
         {
             if (Creature* pPos = m_creature->GetMap()->GetCreature(*itr))
-                m_creature->SummonCreature(uiSummonEntry, pPos->GetPositionX(), pPos->GetPositionY(), pPos->GetPositionZ(), pPos->GetOrientation(), TEMPSUMMON_DEAD_DESPAWN, 0);
+                m_creature->SummonCreature(uiSummonEntry, pPos->GetPositionX(), pPos->GetPositionY(), pPos->GetPositionZ(), pPos->GetOrientation(), TEMPSPAWN_DEAD_DESPAWN, 0);
         }
     }
 
@@ -279,9 +279,9 @@ struct boss_gothikAI : public ScriptedAI
         {
             switch (pSummoned->GetEntry())
             {
-                    // Wrong caster, it expected to be pSummoned.
-                    // Mangos deletes the spell event at caster death, so for delayed spell like this
-                    // it's just a workaround. Does not affect other than the visual though (+ spell takes longer to "travel")
+                // Wrong caster, it expected to be pSummoned.
+                // Mangos deletes the spell event at caster death, so for delayed spell like this
+                // it's just a workaround. Does not affect other than the visual though (+ spell takes longer to "travel")
                 case NPC_UNREL_TRAINEE:         m_creature->CastSpell(pAnchor, SPELL_A_TO_ANCHOR_1, TRIGGERED_OLD_TRIGGERED, nullptr, nullptr, pSummoned->GetObjectGuid()); break;
                 case NPC_UNREL_DEATH_KNIGHT:    m_creature->CastSpell(pAnchor, SPELL_B_TO_ANCHOR_1, TRIGGERED_OLD_TRIGGERED, nullptr, nullptr, pSummoned->GetObjectGuid()); break;
                 case NPC_UNREL_RIDER:           m_creature->CastSpell(pAnchor, SPELL_C_TO_ANCHOR_1, TRIGGERED_OLD_TRIGGERED, nullptr, nullptr, pSummoned->GetObjectGuid()); break;
@@ -311,7 +311,7 @@ struct boss_gothikAI : public ScriptedAI
                 else
                     m_uiSpeechTimer -= uiDiff;
 
-                // No break here
+            // No break here
 
             case PHASE_BALCONY:                            // Do summoning
                 if (m_uiTraineeTimer < uiDiff)
@@ -388,7 +388,7 @@ struct boss_gothikAI : public ScriptedAI
                     // as the doors now open, recheck whether mobs are standing around
                     m_uiControlZoneTimer = 1;
                 }
-                // no break here
+            // no break here
 
             case PHASE_STOP_TELEPORTING:
                 if (m_uiHarvestSoulTimer < uiDiff)
@@ -518,10 +518,10 @@ bool EffectDummyCreature_spell_anchor(Unit* /*pCaster*/, uint32 uiSpellId, Spell
                 else if (uiSpellId == SPELL_C_TO_SKULL)
                     uiNpcEntry = NPC_SPECT_RIDER;
 
-                pGoth->SummonCreature(uiNpcEntry, pCreatureTarget->GetPositionX(), pCreatureTarget->GetPositionY(), pCreatureTarget->GetPositionZ(), pCreatureTarget->GetOrientation(), TEMPSUMMON_DEAD_DESPAWN, 0);
+                pGoth->SummonCreature(uiNpcEntry, pCreatureTarget->GetPositionX(), pCreatureTarget->GetPositionY(), pCreatureTarget->GetPositionZ(), pCreatureTarget->GetOrientation(), TEMPSPAWN_DEAD_DESPAWN, 0);
 
                 if (uiNpcEntry == NPC_SPECT_RIDER)
-                    pGoth->SummonCreature(NPC_SPECT_HORSE, pCreatureTarget->GetPositionX(), pCreatureTarget->GetPositionY(), pCreatureTarget->GetPositionZ(), pCreatureTarget->GetOrientation(), TEMPSUMMON_DEAD_DESPAWN, 0);
+                    pGoth->SummonCreature(NPC_SPECT_HORSE, pCreatureTarget->GetPositionX(), pCreatureTarget->GetPositionY(), pCreatureTarget->GetPositionZ(), pCreatureTarget->GetOrientation(), TEMPSPAWN_DEAD_DESPAWN, 0);
             }
             return true;
         }

@@ -26,6 +26,7 @@
 #include "Spells/SpellAuras.h"
 #include "Server/DBCEnums.h"
 #include "Server/SQLStorages.h"
+#include "Spells/SpellMgr.h"
 
 #include <memory>
 
@@ -126,7 +127,7 @@ inline void MaNGOS::DynamicObjectUpdater::VisitHelper(Unit* target)
         return;
 
     // Check targets for not_selectable unit flag and remove
-    if (target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_OOC_NOT_ATTACKABLE))
+    if (target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PLAYER))
         return;
 
     // Evade target
@@ -137,23 +138,52 @@ inline void MaNGOS::DynamicObjectUpdater::VisitHelper(Unit* target)
     if (target->GetTypeId() == TYPEID_PLAYER && target != i_check && (((Player*)target)->isGameMaster() || ((Player*)target)->GetVisibility() == VISIBILITY_OFF))
         return;
 
-    // for player casts use less strict negative and more stricted positive targeting
-    if (i_check->GetTypeId() == TYPEID_PLAYER)
+    SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(i_dynobject.GetSpellId());
+    SpellEffectIndex eff_index  = i_dynobject.GetEffIndex();
+    Unit* caster = i_dynobject.GetCaster();
+
+    SQLMultiStorage::SQLMSIteratorBounds<SpellTargetEntry> bounds = sSpellScriptTargetStorage.getBounds<SpellTargetEntry>(spellInfo->Id);
+    if (bounds.first != bounds.second)
     {
-        if (i_check->IsFriendlyTo(target) != i_positive)
+        bool found = false;
+        for (SQLMultiStorage::SQLMultiSIterator<SpellTargetEntry> i_spellST = bounds.first; i_spellST != bounds.second; ++i_spellST)
+        {
+            if (i_spellST->CanNotHitWithSpellEffect(eff_index))
+                continue;
+
+            // only creature entries supported for this target type
+            if (i_spellST->type == SPELL_TARGET_TYPE_GAMEOBJECT)
+                continue;
+
+            if (target->GetEntry() == i_spellST->targetEntry)
+            {
+                if (i_spellST->type == SPELL_TARGET_TYPE_DEAD && ((Creature*)target)->IsCorpse())
+                    found = true;
+                else if (i_spellST->type == SPELL_TARGET_TYPE_CREATURE && target->isAlive())
+                    found = true;
+
+                break;
+            }
+        }
+
+        if (!found)
             return;
     }
     else
     {
-        if (i_check->IsHostileTo(target) == i_positive)
-            return;
+        // for player casts use less strict negative and more stricted positive targeting
+        if (i_positive)
+        {
+            if (!caster->CanAssistSpell(target, spellInfo))
+                return;
+        }
+        else
+        {
+            if (!caster->CanAttackSpell(target, spellInfo, true))
+                return;
+        }
     }
 
-    if (i_dynobject.IsAffecting(target))
-        return;
-
-    SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(i_dynobject.GetSpellId());
-    SpellEffectIndex eff_index  = i_dynobject.GetEffIndex();
 
     // Check target immune to spell or aura
     if (target->IsImmuneToSpell(spellInfo, false) || target->IsImmuneToSpellEffect(spellInfo, eff_index, false))
@@ -170,9 +200,7 @@ inline void MaNGOS::DynamicObjectUpdater::VisitHelper(Unit* target)
             PersistentAreaAura* Aur = new PersistentAreaAura(spellInfo, eff_index, nullptr, holder, target, i_dynobject.GetCaster());
             holder->AddAura(Aur, eff_index);
             target->AddAuraToModList(Aur);
-            holder->SetInUse(true);
             Aur->ApplyModifier(true, true);
-            holder->SetInUse(false);
         }
         else if (holder->GetAuraDuration() >= 0 && uint32(holder->GetAuraDuration()) < i_dynobject.GetDuration())
         {

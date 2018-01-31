@@ -25,7 +25,7 @@ EndScriptData
 
 #include "AI/ScriptDevAI/PreCompiledHeader.h"
 #include "molten_core.h"
-#include "Entities/TemporarySummon.h"
+#include "Entities/TemporarySpawn.h"
 
 enum
 {
@@ -141,7 +141,7 @@ struct boss_majordomoAI : public ScriptedAI
             m_creature->SetLootRecipient(nullptr);
 
             // Set friendly
-            m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_OOC_NOT_ATTACKABLE);
+            m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
             m_creature->SetFactionTemporary(FACTION_MAJORDOMO_FRIENDLY, TEMPFACTION_RESTORE_RESPAWN);
 
             // Reset orientation
@@ -240,7 +240,7 @@ struct boss_majordomoAI : public ScriptedAI
         {
             if (Creature* pAdd = m_creature->GetMap()->GetCreature(*itr))
                 if (pAdd->IsTemporarySummon())
-                    ((TemporarySummon*)pAdd)->UnSummon();
+                    ((TemporarySpawn*)pAdd)->UnSummon();
         }
 
         m_luiMajordomoAddsGUIDs.clear();
@@ -264,7 +264,7 @@ struct boss_majordomoAI : public ScriptedAI
             {
                 switch (m_uiSpeech)
                 {
-                        // Majordomo retreat event
+                    // Majordomo retreat event
                     case 1:
                         DoScriptText(SAY_DEFEAT_1, m_creature);
                         m_uiSpeechTimer = 7500;
@@ -293,7 +293,7 @@ struct boss_majordomoAI : public ScriptedAI
                         m_uiSpeech = 0;
                         break;
 
-                        // Ragnaros Summon Event
+                    // Ragnaros Summon Event
                     case 10:
                         DoScriptText(SAY_SUMMON_1, m_creature);
                         ++m_uiSpeech;
@@ -318,7 +318,7 @@ struct boss_majordomoAI : public ScriptedAI
                         // Summon Ragnaros and make sure it faces Majordomo Executus
                         if (m_pInstance)
                             if (GameObject* pGo = m_pInstance->GetSingleGameObjectFromStorage(GO_LAVA_STEAM))
-                                m_creature->SummonCreature(NPC_RAGNAROS, pGo->GetPositionX(), pGo->GetPositionY(), pGo->GetPositionZ(), fmod(m_creature->GetOrientation() + M_PI, 2 * M_PI), TEMPSUMMON_TIMED_OOC_OR_DEAD_DESPAWN, 2 * HOUR * IN_MILLISECONDS);
+                                m_creature->SummonCreature(NPC_RAGNAROS, pGo->GetPositionX(), pGo->GetPositionY(), pGo->GetPositionZ(), fmod(m_creature->GetOrientation() + M_PI, 2 * M_PI), TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, 2 * HOUR * IN_MILLISECONDS);
                         ++m_uiSpeech;
                         m_uiSpeechTimer = 8700;
                         break;
@@ -376,7 +376,7 @@ struct boss_majordomoAI : public ScriptedAI
         // Damage/Magic Reflection Timer
         if (m_uiReflectionShieldTimer < uiDiff)
         {
-            if (DoCastSpellIfCan(m_creature, (urand(0 , 1) ? SPELL_DAMAGE_REFLECTION : SPELL_MAGIC_REFLECTION)) == CAST_OK)
+            if (DoCastSpellIfCan(m_creature, (urand(0, 1) ? SPELL_DAMAGE_REFLECTION : SPELL_MAGIC_REFLECTION)) == CAST_OK)
                 m_uiReflectionShieldTimer = 30000;
         }
         else
@@ -386,7 +386,7 @@ struct boss_majordomoAI : public ScriptedAI
         if (m_uiTeleportTargetTimer < uiDiff)
         {
             if (DoCastSpellIfCan(m_creature->getVictim(), SPELL_TELEPORT_TARGET) == CAST_OK)
-                m_uiTeleportTargetTimer = urand (25000, 30000);
+                m_uiTeleportTargetTimer = urand(25000, 30000);
         }
         else
             m_uiTeleportTargetTimer -= uiDiff;
@@ -397,7 +397,7 @@ struct boss_majordomoAI : public ScriptedAI
             if (Unit* pTarget = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 1))
             {
                 if (DoCastSpellIfCan(pTarget, SPELL_TELEPORT_RANDOM) == CAST_OK)
-                    m_uiTeleportRandomTimer = urand (25000, 30000);
+                    m_uiTeleportRandomTimer = urand(25000, 30000);
             }
         }
         else

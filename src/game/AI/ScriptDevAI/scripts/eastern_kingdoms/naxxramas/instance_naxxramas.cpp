@@ -77,7 +77,7 @@ void instance_naxxramas::OnPlayerEnter(Player* pPlayer)
     if (GetSingleCreatureFromStorage(NPC_SAPPHIRON, true))
         return;
 
-    pPlayer->SummonCreature(NPC_SAPPHIRON, aSapphPositions[0], aSapphPositions[1], aSapphPositions[2], aSapphPositions[3], TEMPSUMMON_DEAD_DESPAWN, 0);
+    pPlayer->SummonCreature(NPC_SAPPHIRON, aSapphPositions[0], aSapphPositions[1], aSapphPositions[2], aSapphPositions[3], TEMPSPAWN_DEAD_DESPAWN, 0);
 }
 
 void instance_naxxramas::OnCreatureCreate(Creature* pCreature)
@@ -101,7 +101,7 @@ void instance_naxxramas::OnCreatureCreate(Creature* pCreature)
         case NPC_SAPPHIRON:
         case NPC_KELTHUZAD:
         case NPC_THE_LICHKING:
-            m_mNpcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+            m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
             break;
 
         case NPC_SUB_BOSS_TRIGGER:  m_lGothTriggerList.push_back(pCreature->GetObjectGuid()); break;
@@ -113,7 +113,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
 {
     switch (pGo->GetEntry())
     {
-            // Arachnid Quarter
+        // Arachnid Quarter
         case GO_ARAC_ANUB_DOOR:
             break;
         case GO_ARAC_ANUB_GATE:
@@ -133,7 +133,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
                 pGo->SetGoState(GO_STATE_ACTIVE);
             break;
 
-            // Plague Quarter
+        // Plague Quarter
         case GO_PLAG_NOTH_ENTRY_DOOR:
             break;
         case GO_PLAG_NOTH_EXIT_DOOR:
@@ -151,7 +151,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
         case GO_PLAG_LOAT_DOOR:
             break;
 
-            // Military Quarter
+        // Military Quarter
         case GO_MILI_GOTH_ENTRY_GATE:
             break;
         case GO_MILI_GOTH_EXIT_GATE:
@@ -167,7 +167,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
         case GO_CHEST_HORSEMEN_NORM:
             break;
 
-            // Construct Quarter
+        // Construct Quarter
         case GO_CONS_PATH_EXIT_DOOR:
             if (m_auiEncounter[TYPE_PATCHWERK] == DONE)
                 pGo->SetGoState(GO_STATE_ACTIVE);
@@ -189,7 +189,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
                 pGo->SetGoState(GO_STATE_READY);
             break;
 
-            // Frostwyrm Lair
+        // Frostwyrm Lair
         case GO_KELTHUZAD_WATERFALL_DOOR:
             if (m_auiEncounter[TYPE_SAPPHIRON] == DONE)
                 pGo->SetGoState(GO_STATE_ACTIVE);
@@ -201,7 +201,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
         case GO_KELTHUZAD_WINDOW_4:
             break;
 
-            // Eyes
+        // Eyes
         case GO_ARAC_EYE_RAMP:
         case GO_ARAC_EYE_BOSS:
             if (m_auiEncounter[TYPE_MAEXXNA] == DONE)
@@ -223,7 +223,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
                 pGo->SetGoState(GO_STATE_ACTIVE);
             break;
 
-            // Portals
+        // Portals
         case GO_ARAC_PORTAL:
             if (m_auiEncounter[TYPE_MAEXXNA] == DONE)
                 pGo->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT);
@@ -259,7 +259,7 @@ void instance_naxxramas::OnObjectCreate(GameObject* pGo)
 
             return;
     }
-    m_mGoEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
+    m_goEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
 }
 
 void instance_naxxramas::OnCreatureDeath(Creature* pCreature)
@@ -531,7 +531,7 @@ void instance_naxxramas::Update(uint32 uiDiff)
             {
                 // Spawn 3 living poisons every 5 secs and make them cross the corridor and then despawn, for ever and ever
                 for (uint8 i = 0; i < 3; i++)
-                    if (Creature* pPoison = pPlayer->SummonCreature(NPC_LIVING_POISON, aLivingPoisonPositions[i].m_fX, aLivingPoisonPositions[i].m_fY, aLivingPoisonPositions[i].m_fZ, aLivingPoisonPositions[i].m_fO, TEMPSUMMON_DEAD_DESPAWN, 0))
+                    if (Creature* pPoison = pPlayer->SummonCreature(NPC_LIVING_POISON, aLivingPoisonPositions[i].m_fX, aLivingPoisonPositions[i].m_fY, aLivingPoisonPositions[i].m_fZ, aLivingPoisonPositions[i].m_fO, TEMPSPAWN_DEAD_DESPAWN, 0))
                     {
                         pPoison->GetMotionMaster()->MovePoint(0, aLivingPoisonPositions[i + 3].m_fX, aLivingPoisonPositions[i + 3].m_fY, aLivingPoisonPositions[i + 3].m_fZ);
                         pPoison->ForcedDespawn(15000);
@@ -548,7 +548,7 @@ void instance_naxxramas::Update(uint32 uiDiff)
         if (m_uiScreamsTimer <= uiDiff)
         {
             if (Player* pPlayer = GetPlayerInMap())
-                pPlayer->GetMap()->PlayDirectSoundToMap(SOUND_SCREAM1 + urand(0,3));
+                pPlayer->GetMap()->PlayDirectSoundToMap(SOUND_SCREAM1 + urand(0, 3));
             m_uiScreamsTimer = (2 * MINUTE + urand(0, 30)) * IN_MILLISECONDS;
         }
         else
@@ -571,7 +571,7 @@ void instance_naxxramas::Update(uint32 uiDiff)
         if (m_uiSapphSpawnTimer <= uiDiff)
         {
             if (Player* pPlayer = GetPlayerInMap())
-                pPlayer->SummonCreature(NPC_SAPPHIRON, aSapphPositions[0], aSapphPositions[1], aSapphPositions[2], aSapphPositions[3], TEMPSUMMON_DEAD_DESPAWN, 0);
+                pPlayer->SummonCreature(NPC_SAPPHIRON, aSapphPositions[0], aSapphPositions[1], aSapphPositions[2], aSapphPositions[3], TEMPSPAWN_DEAD_DESPAWN, 0);
 
             m_uiSapphSpawnTimer = 0;
         }

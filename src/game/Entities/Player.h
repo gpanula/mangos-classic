@@ -54,12 +54,20 @@ class DungeonPersistentState;
 class Spell;
 class Item;
 
+#ifdef BUILD_PLAYERBOT
+#include "PlayerBot/Base/PlayerbotMgr.h"
+#include "PlayerBot/Base/PlayerbotAI.h"
+#endif
+
 struct AreaTrigger;
 
 typedef std::deque<Mail*> PlayerMails;
 
 #define PLAYER_MAX_SKILLS           127
 #define PLAYER_EXPLORED_ZONES_SIZE  64
+
+// TODO: Maybe this can be implemented in configuration file.
+#define PLAYER_NEW_INSTANCE_LIMIT_PER_HOUR 5
 
 // Note: SPELLMOD_* values is aura types in fact
 enum SpellModType
@@ -268,10 +276,14 @@ struct PlayerInfo
 
 struct PvPInfo
 {
-    PvPInfo() : inHostileArea(false), endTimer(0) {}
+    PvPInfo() : inPvPCombat(false), inPvPEnforcedArea(false), inPvPCapturePoint(false), isPvPFlagCarrier(false), timerPvPRemaining(0), timerPvPContestedRemaining(0) {}
 
-    bool inHostileArea;
-    time_t endTimer;
+    bool inPvPCombat;
+    bool inPvPEnforcedArea;
+    bool inPvPCapturePoint;
+    bool isPvPFlagCarrier;
+    uint32 timerPvPRemaining;
+    uint32 timerPvPContestedRemaining;
 };
 
 struct DuelInfo
@@ -379,7 +391,7 @@ enum PlayerFlags
     PLAYER_FLAGS_UNK7                   = 0x00000040,       // admin?
     PLAYER_FLAGS_FFA_PVP                = 0x00000080,
     PLAYER_FLAGS_CONTESTED_PVP          = 0x00000100,       // Player has been involved in a PvP combat and will be attacked by contested guards
-    PLAYER_FLAGS_IN_PVP                 = 0x00000200,
+    PLAYER_FLAGS_PVP_DESIRED            = 0x00000200,       // Stores player's permanent PvP flag preference
     PLAYER_FLAGS_HIDE_HELM              = 0x00000400,
     PLAYER_FLAGS_HIDE_CLOAK             = 0x00000800,
     PLAYER_FLAGS_PARTIAL_PLAY_TIME      = 0x00001000,       // played long time
@@ -447,6 +459,7 @@ enum AtLoginFlags
     // AT_LOGIN_CUSTOMIZE         = 0x08, -- used in post-3.x
     // AT_LOGIN_RESET_PET_TALENTS = 0x10, -- used in post-3.x
     AT_LOGIN_FIRST                = 0x20,
+    AT_LOGIN_RESET_TAXINODES      = 0x40,
 };
 
 typedef std::map<uint32, QuestStatusData> QuestStatusMap;
@@ -734,19 +747,26 @@ class PlayerTaxi
         void ClearTaxiDestinations() { m_TaxiDestinations.clear(); }
         void AddTaxiDestination(uint32 dest) { m_TaxiDestinations.push_back(dest); }
         uint32 GetTaxiSource() const { return m_TaxiDestinations.empty() ? 0 : m_TaxiDestinations.front(); }
-        uint32 GetTaxiDestination() const { return m_TaxiDestinations.size() < 2 ? 0 : m_TaxiDestinations[1]; }
+        uint32 GetNextTaxiDestination() const { return m_TaxiDestinations.size() < 2 ? 0 : m_TaxiDestinations[1]; }
+        uint32 GetFinalTaxiDestination() const { return m_TaxiDestinations.empty() ? 0 : m_TaxiDestinations.back(); }
         uint32 GetCurrentTaxiPath() const;
         uint32 NextTaxiDestination()
         {
             m_TaxiDestinations.pop_front();
-            return GetTaxiDestination();
+            return GetNextTaxiDestination();
         }
         bool empty() const { return m_TaxiDestinations.empty(); }
 
         friend std::ostringstream& operator<< (std::ostringstream& ss, PlayerTaxi const& taxi);
+
+        std::deque<uint32> const& GetPath() const { return m_TaxiDestinations; }
+
+        uint32 GetLastNode() { return m_lastNode; }
+        void SetLastNode(uint32 lastNode) { m_lastNode = lastNode; }
     private:
         TaxiMask m_taximask;
         std::deque<uint32> m_TaxiDestinations;
+        uint32 m_lastNode;
 };
 
 std::ostringstream& operator<< (std::ostringstream& ss, PlayerTaxi const& taxi);
@@ -948,6 +968,8 @@ class Player : public Unit
         uint32 GetTotalPlayedTime() { return m_Played_time[PLAYED_TIME_TOTAL]; }
         uint32 GetLevelPlayedTime() { return m_Played_time[PLAYED_TIME_LEVEL]; }
 
+        Player* GetSpellModOwner() const override { return const_cast<Player*>(this); }
+
         void SetDeathState(DeathState s) override;          // overwrite Unit::SetDeathState
 
         float GetRestBonus() const { return m_rest_bonus; }
@@ -974,11 +996,6 @@ class Player : public Unit
         void UpdateInnerTime(time_t time) { time_inn_enter = time; }
 
         void RemovePet(PetSaveMode mode);
-        void RemoveMiniPet();
-        Pet* GetMiniPet() const;
-
-        // use only in Pet::Unsummon/Spell::DoSummon
-        void _SetMiniPet(Pet* pet) { m_miniPetGuid = pet ? pet->GetObjectGuid() : ObjectGuid(); }
 
         void Say(const std::string& text, const uint32 language) const;
         void Yell(const std::string& text, const uint32 language) const;
@@ -991,7 +1008,7 @@ class Player : public Unit
 
         void SetVirtualItemSlot(uint8 i, Item* item);
         void SetSheath(SheathState sheathed) override;      // overwrite Unit version
-        bool ViableEquipSlots(ItemPrototype const* proto, uint8 *viable_slots) const;
+        bool ViableEquipSlots(ItemPrototype const* proto, uint8* viable_slots) const;
         uint8 FindEquipSlot(ItemPrototype const* proto, uint32 slot, bool swap) const;
         uint32 GetItemCount(uint32 item, bool inBankAlso = false, Item* skipItem = nullptr) const;
         Item* GetItemByGuid(ObjectGuid guid) const;
@@ -1086,7 +1103,7 @@ class Player : public Unit
         Item* GetItemFromBuyBackSlot(uint32 slot);
         void RemoveItemFromBuyBackSlot(uint32 slot, bool del);
 
-        uint32 GetMaxKeyringSize() const { return KEYRING_SLOT_END - KEYRING_SLOT_START; }
+        uint32 GetMaxKeyringClientSize() const; // number of slots available depending on the Player's level - limited by Client GUI
         void SendEquipError(InventoryResult msg, Item* pItem, Item* pItem2 = nullptr, uint32 itemid = 0) const;
         void SendBuyError(BuyResult msg, Creature* pCreature, uint32 item, uint32 param) const;
         void SendSellError(SellResult msg, Creature* pCreature, ObjectGuid itemGuid, uint32 param) const;
@@ -1167,6 +1184,8 @@ class Player : public Unit
         void RewardQuest(Quest const* pQuest, uint32 reward, Object* questGiver, bool announce = true);
 
         void FailQuest(uint32 quest_id);
+        void FailQuest(Quest const* quest);
+        void FailQuestsOnDeath();
         bool SatisfyQuestSkill(Quest const* qInfo, bool msg) const;
         bool SatisfyQuestCondition(Quest const* qInfo, bool msg) const;
         bool SatisfyQuestLevel(Quest const* qInfo, bool msg) const;
@@ -1254,6 +1273,14 @@ class Player : public Unit
         void AddTimedQuest(uint32 quest_id) { m_timedquests.insert(quest_id); }
         void RemoveTimedQuest(uint32 quest_id) { m_timedquests.erase(quest_id); }
 
+#ifdef BUILD_PLAYERBOT
+        void chompAndTrim(std::string& str);
+        bool getNextQuestId(const std::string& pString, unsigned int& pStartPos, unsigned int& pId);
+        void skill(std::list<uint32>& m_spellsToLearn);
+        bool requiredQuests(const char* pQuestIdString);
+        uint32 GetSpec();
+#endif
+
         /*********************************************************/
         /***                   LOAD SYSTEM                     ***/
         /*********************************************************/
@@ -1309,8 +1336,8 @@ class Player : public Unit
         QuestStatusMap& getQuestStatusMap() { return mQuestStatus; };
         const QuestStatusMap& getQuestStatusMap() const { return mQuestStatus; };
 
-        ObjectGuid const& GetSelectionGuid() const { return m_curSelectionGuid; }
-        void SetSelectionGuid(ObjectGuid guid) { m_curSelectionGuid = guid; SetTargetGuid(guid); }
+        ObjectGuid const& GetSelectionGuid() const override { return m_curSelectionGuid; }
+        void SetSelectionGuid(ObjectGuid guid) override { m_curSelectionGuid = guid; SetTargetGuid(guid); }
 
         uint8 GetComboPoints() const { return m_comboPoints; }
         ObjectGuid const& GetComboTargetGuid() const { return m_comboTargetGuid; }
@@ -1318,6 +1345,8 @@ class Player : public Unit
         void AddComboPoints(Unit* target, int8 count);
         void ClearComboPoints();
         void SetComboPoints();
+
+        bool AttackStop(bool targetSwitch = false, bool includingCast = false, bool includingCombo = false) override;
 
         void SendMailResult(uint32 mailId, MailResponseType mailAction, MailResponseResult mailError, uint32 equipError = 0, uint32 item_guid = 0, uint32 item_count = 0) const;
         void SendNewMail() const;
@@ -1403,41 +1432,12 @@ class Player : public Unit
         PlayerSpellMap const& GetSpellMap() const { return m_spells; }
         PlayerSpellMap&       GetSpellMap()       { return m_spells; }
 
-        SpellCooldowns const& GetSpellCooldownMap() const { return m_spellCooldowns; }
-
         void AddSpellMod(SpellModifier* mod, bool apply);
         bool IsAffectedBySpellmod(SpellEntry const* spellInfo, SpellModifier* mod, Spell const* spell = nullptr);
         template <class T> T ApplySpellMod(uint32 spellId, SpellModOp op, T& basevalue, Spell const* spell = nullptr);
         SpellModifier* GetSpellMod(SpellModOp op, uint32 spellId) const;
         void RemoveSpellMods(Spell const* spell);
         void ResetSpellModsDueToCanceledSpell(Spell const* spell);
-
-        static uint32 const infinityCooldownDelay = MONTH;  // used for set "infinity cooldowns" for spells and check
-        static uint32 const infinityCooldownDelayCheck = MONTH / 2;
-        bool HasSpellCooldown(uint32 spell_id) const
-        {
-            SpellCooldowns::const_iterator itr = m_spellCooldowns.find(spell_id);
-            return itr != m_spellCooldowns.end() && itr->second.end > time(nullptr);
-        }
-        time_t GetSpellCooldownDelay(uint32 spell_id) const
-        {
-            SpellCooldowns::const_iterator itr = m_spellCooldowns.find(spell_id);
-            time_t t = time(nullptr);
-            return itr != m_spellCooldowns.end() && itr->second.end > t ? itr->second.end - t : 0;
-        }
-        void AddSpellAndCategoryCooldowns(SpellEntry const* spellInfo, uint32 itemId, Spell* spell = nullptr, bool infinityCooldown = false);
-        void AddSpellCooldown(uint32 spell_id, uint32 itemid, time_t end_time);
-        void SendCooldownEvent(SpellEntry const* spellInfo, uint32 itemId = 0, Spell* spell = nullptr);
-        void ProhibitSpellSchool(SpellSchoolMask idSchoolMask, uint32 unTimeMs) override;
-        void RemoveSpellCooldown(uint32 spell_id, bool update = false);
-        void RemoveSpellCategoryCooldown(uint32 cat, bool update = false);
-        void SendClearCooldown(uint32 spell_id, Unit* target) const;
-
-        GlobalCooldownMgr& GetGlobalCooldownMgr() { return m_GlobalCooldownMgr; }
-
-        void RemoveAllSpellCooldown();
-        void _LoadSpellCooldowns(QueryResult* result);
-        void _SaveSpellCooldowns();
 
         void setResurrectRequestData(ObjectGuid guid, uint32 mapId, float X, float Y, float Z, uint32 health, uint32 mana)
         {
@@ -1463,9 +1463,8 @@ class Player : public Unit
         void SendInitialActionButtons() const;
 
         PvPInfo pvpInfo;
-        void UpdatePvP(bool state, bool ovrride = false);
-        bool IsFFAPvP() const { return HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_FFA_PVP); }
-        void SetFFAPvP(bool state);
+        void UpdatePvP(bool state, bool overriding = false);
+        void UpdatePvPContested(bool state, bool overriding = false);
 
         void UpdateZone(uint32 newZone, uint32 newArea);
         void UpdateArea(uint32 newArea);
@@ -1474,15 +1473,8 @@ class Player : public Unit
         void UpdateZoneDependentAuras();
         void UpdateAreaDependentAuras();                    // subzones
 
-        void UpdatePvPFlag(time_t currTime);
-        void UpdateContestedPvP(uint32 currTime);
-        void SetContestedPvPTimer(uint32 newTime) {m_contestedPvPTimer = newTime;}
-        void ResetContestedPvP()
-        {
-            clearUnitState(UNIT_STAT_ATTACK_PLAYER);
-            RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_CONTESTED_PVP);
-            m_contestedPvPTimer = 0;
-        }
+        void UpdatePvPFlagTimer(uint32 diff);
+        void UpdatePvPContestedFlagTimer(uint32 diff);
 
         /** todo: -maybe move UpdateDuelFlag+DuelComplete to independent DuelHandler.. **/
         DuelInfo* duel;
@@ -1510,6 +1502,10 @@ class Player : public Unit
         int GetGuildIdInvited() { return m_GuildIdInvited; }
         static void RemovePetitionsAndSigns(ObjectGuid guid);
 
+        bool CanEnterNewInstance(uint32 instanceId);
+        void AddNewInstanceId(uint32 instanceId);
+        void UpdateNewInstanceIdTimers(TimePoint const& now);
+
         bool UpdateSkill(uint32 skill_id, uint32 step);
         bool UpdateSkillPro(uint16 SkillId, int32 Chance, uint32 step);
 
@@ -1519,6 +1515,9 @@ class Player : public Unit
 
         uint32 GetBaseDefenseSkillValue() const { return GetBaseSkillValue(SKILL_DEFENSE); }
         uint32 GetBaseWeaponSkillValue(WeaponAttackType attType) const;
+
+        uint32 GetPureDefenseSkillValue() const { return GetPureSkillValue(SKILL_DEFENSE); }
+        uint32 GetPureWeaponSkillValue(WeaponAttackType attType) const;
 
         float GetHealthBonusFromStamina() const;
         float GetManaBonusFromIntellect() const;
@@ -1776,8 +1775,6 @@ class Player : public Unit
         void SendUpdateWorldState(uint32 Field, uint32 Value) const;
         void SendDirectMessage(WorldPacket const& data) const;
 
-        void SendAuraDurationsForTarget(Unit* target);
-
         PlayerMenu* PlayerTalkClass;
         std::vector<ItemSetEffect*> ItemSetEff;
 
@@ -1941,12 +1938,12 @@ class Player : public Unit
         bool IsFlying() const { return false; }
         bool IsFreeFlying() const { return false; }
 
-        bool IsClientControl(Unit* target) const;
-        void SetClientControl(Unit* target, uint8 allowMove) const;
+        bool IsClientControl(Unit const* target) const;
+        void UpdateClientControl(Unit const* target, bool enabled, bool forced = false) const;
+
         void SetMover(Unit* target) { m_mover = target ? target : this; }
         Unit* GetMover() const { return m_mover; }
         bool IsSelfMover() const { return m_mover == this; }// normal case for player not controlling other unit
-        void Uncharm() override;
 
         ObjectGuid const& GetFarSightGuid() const { return GetGuidValue(PLAYER_FARSIGHT); }
 
@@ -2034,7 +2031,7 @@ class Player : public Unit
         DungeonPersistentState* GetBoundInstanceSaveForSelfOrGroup(uint32 mapid);
 
         AreaLockStatus GetAreaTriggerLockStatus(AreaTrigger const* at, uint32& miscRequirement);
-        void SendTransferAbortedByLockStatus(MapEntry const* mapEntry, AreaLockStatus lockStatus, uint32 miscRequirement = 0) const;
+        void SendTransferAbortedByLockStatus(MapEntry const* mapEntry, AreaTrigger const* at, AreaLockStatus lockStatus, uint32 miscRequirement = 0) const;
 
         /*********************************************************/
         /***                   GROUP SYSTEM                    ***/
@@ -2069,10 +2066,47 @@ class Player : public Unit
         virtual CombatData* GetCombatData() override { if (m_charmInfo && m_charmInfo->GetCombatData()) return m_charmInfo->GetCombatData(); return m_combatData; }
         void ForceHealAndPowerUpdateInZone();
 
+#ifdef BUILD_PLAYERBOT
+        // A Player can either have a playerbotMgr (to manage its bots), or have playerbotAI (if it is a bot), or
+        // neither. Code that enables bots must create the playerbotMgr and set it using SetPlayerbotMgr.
+        void SetPlayerbotAI(PlayerbotAI* ai) { assert(!m_playerbotAI && !m_playerbotMgr); m_playerbotAI = ai; }
+        PlayerbotAI* GetPlayerbotAI() { return m_playerbotAI; }
+        void SetPlayerbotMgr(PlayerbotMgr* mgr) { assert(!m_playerbotAI && !m_playerbotMgr); m_playerbotMgr = mgr; }
+        PlayerbotMgr* GetPlayerbotMgr() { return m_playerbotMgr; }
+        void SetBotDeathTimer() { m_deathTimer = 0; }
+        bool IsInDuel() const { return duel && duel->startTime != 0; }
+#endif
+
+        // cooldown system
+        virtual void AddGCD(SpellEntry const& spellEntry, uint32 forcedDuration = 0, bool updateClient = 0) override;
+        virtual void AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* itemProto = nullptr, bool permanent = false, uint32 forcedDuration = 0) override;
+        virtual void RemoveSpellCooldown(SpellEntry const& spellEntry, bool updateClient = true) override;
+        virtual void RemoveSpellCategoryCooldown(uint32 category, bool updateClient = true) override;
+        virtual void RemoveAllCooldowns(bool sendOnly = false);
+        virtual void LockOutSpells(SpellSchoolMask schoolMask, uint32 duration) override;
+        void RemoveSpellLockout(SpellSchoolMask spellSchoolMask, std::set<uint32>* spellAlreadySent = nullptr);
+        void SendClearCooldown(uint32 spell_id, Unit* target) const;
+        void _LoadSpellCooldowns(QueryResult* result);
+        void _SaveSpellCooldowns();
+
+        template <typename F>
+        void RemoveSomeCooldown(F check)
+        {
+            auto spellCDItr = m_cooldownMap.begin();
+            while (spellCDItr != m_cooldownMap.end())
+            {
+                SpellEntry const* entry = sSpellTemplate.LookupEntry<SpellEntry>(spellCDItr->first);
+                if (entry && check(*entry))
+                {
+                    SendClearCooldown(spellCDItr->first, this);
+                    spellCDItr = m_cooldownMap.erase(spellCDItr);
+                }
+                else
+                    ++spellCDItr;
+            }
+        }
+
     protected:
-
-        uint32 m_contestedPvPTimer;
-
         /*********************************************************/
         /***               BATTLEGROUND SYSTEM                 ***/
         /*********************************************************/
@@ -2119,6 +2153,8 @@ class Player : public Unit
         bool _LoadHomeBind(QueryResult* result);
         void _LoadBGData(QueryResult* result);
         void _LoadIntoDataField(const char* data, uint32 startOffset, uint32 count);
+        void _LoadCreatedInstanceTimers();
+        void _SaveNewInstanceIdTimer();
 
         /*********************************************************/
         /***                   SAVE SYSTEM                     ***/
@@ -2188,9 +2224,6 @@ class Player : public Unit
 
         PlayerMails m_mail;
         PlayerSpellMap m_spells;
-        SpellCooldowns m_spellCooldowns;
-
-        GlobalCooldownMgr m_GlobalCooldownMgr;
 
         ActionButtonList m_actionButtons;
 
@@ -2259,8 +2292,6 @@ class Player : public Unit
         uint32 m_groupUpdateMask;
         uint64 m_auraUpdateMask;
 
-        ObjectGuid m_miniPetGuid;
-
         // Player summoning
         time_t m_summon_expire;
         uint32 m_summon_mapid;
@@ -2304,6 +2335,11 @@ class Player : public Unit
         GridReference<Player> m_gridRef;
         MapReference m_mapRef;
 
+#ifdef BUILD_PLAYERBOT
+        PlayerbotAI* m_playerbotAI;
+        PlayerbotMgr* m_playerbotMgr;
+#endif
+
         // Homebind coordinates
         uint32 m_homebindMapId;
         uint16 m_homebindAreaId;
@@ -2340,6 +2376,9 @@ class Player : public Unit
         ReputationMgr  m_reputationMgr;
 
         int32 m_cannotBeDetectedTimer;
+
+        std::unordered_map<uint32, TimePoint> m_enteredInstances;
+        uint32 m_createdInstanceClearTimer;
 };
 
 void AddItemsSetItem(Player* player, Item* item);

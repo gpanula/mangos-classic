@@ -206,6 +206,7 @@ class ChatHandler
 
         bool HandleDebugAnimCommand(char* args);
         bool HandleDebugBattlegroundCommand(char* args);
+        bool HandleDebugBattlegroundStartCommand(char* args);
         bool HandleDebugGetItemStateCommand(char* args);
         bool HandleDebugGetItemValueCommand(char* args);
         bool HandleDebugGetLootRecipientCommand(char* args);
@@ -410,6 +411,7 @@ class ChatHandler
         bool HandleReloadDBScriptsOnQuestEndCommand(char* args);
         bool HandleReloadDBScriptsOnQuestStartCommand(char* args);
         bool HandleReloadDBScriptsOnSpellCommand(char* args);
+        bool HandleReloadDBScriptsOnRelayCommand(char* args);
 
         bool HandleReloadEventAITextsCommand(char* args);
         bool HandleReloadEventAISummonsCommand(char* args);
@@ -417,6 +419,7 @@ class ChatHandler
         bool HandleReloadGameGraveyardZoneCommand(char* args);
         bool HandleReloadGameTeleCommand(char* args);
         bool HandleReloadGossipMenuCommand(char* args);
+        bool HandleReloadQuestgiverGreetingCommand(char* args);
         bool HandleReloadGOQuestRelationsCommand(char* args);
         bool HandleReloadGOQuestInvRelationsCommand(char* args);
         bool HandleReloadItemEnchantementsCommand(char* args);
@@ -429,6 +432,8 @@ class ChatHandler
         bool HandleReloadLocalesPageTextCommand(char* args);
         bool HandleReloadLocalesPointsOfInterestCommand(char* args);
         bool HandleReloadLocalesQuestCommand(char* args);
+        bool HandleReloadLocalesAreaTriggerCommand(char*);
+        bool HandleReloadQuestgiverGreetingLocalesCommand(char* args);
         bool HandleReloadLootTemplatesCreatureCommand(char* args);
         bool HandleReloadLootTemplatesDisenchantCommand(char* args);
         bool HandleReloadLootTemplatesFishingCommand(char* args);
@@ -463,14 +468,15 @@ class ChatHandler
         bool HandleReloadSpellTargetPositionCommand(char* args);
         bool HandleReloadSpellThreatsCommand(char* args);
         bool HandleReloadSpellPetAurasCommand(char* args);
+        bool HandleReloadExpectedSpamRecords(char* args);
 
-        bool HandleResetAchievementsCommand(char* args);
         bool HandleResetAllCommand(char* args);
         bool HandleResetHonorCommand(char* args);
         bool HandleResetLevelCommand(char* args);
         bool HandleResetSpellsCommand(char* args);
         bool HandleResetStatsCommand(char* args);
         bool HandleResetTalentsCommand(char* args);
+        bool HandleResetTaxiNodesCommand(char* args);
 
         bool HandleSendItemsCommand(char* args);
         bool HandleSendMailCommand(char* args);
@@ -543,7 +549,9 @@ class ChatHandler
         bool HandleUnmuteCommand(char* args);
         bool HandleMovegensCommand(char* args);
 
-        bool HandleCooldownCommand(char* args);
+        bool HandleCooldownListCommand(char* args);
+        bool HandleCooldownClearCommand(char* args);
+        bool HandleCooldownClearClientSideCommand(char* args);
         bool HandleUnLearnCommand(char* args);
         bool HandleGetDistanceCommand(char* args);
         bool HandleModifyStandStateCommand(char* args);
@@ -577,6 +585,9 @@ class ChatHandler
         bool HandleStableCommand(char* args);
         bool HandleWaterwalkCommand(char* args);
         bool HandleQuitCommand(char* args);
+#ifdef BUILD_PLAYERBOT
+        bool HandlePlayerbotCommand(char* args);
+#endif
 
         bool HandleMmapPathCommand(char* args);
         bool HandleMmapLocCommand(char* args);
@@ -585,6 +596,12 @@ class ChatHandler
         bool HandleMmap(char* args);
         bool HandleMmapTestArea(char* args);
         bool HandleMmapTestHeight(char* args);
+
+        bool HandleLinkAddCommand(char* args);
+        bool HandleLinkRemoveCommand(char* args);
+        bool HandleLinkEditCommand(char* args);
+        bool HandleLinkToggleCommand(char* args);
+        bool HandleLinkCheckCommand(char* args);
 
         //! Development Commands
         bool HandleSaveAllCommand(char* args);
@@ -695,12 +712,12 @@ class ChatHandler
 class CliHandler : public ChatHandler
 {
     private:
-        typedef std::function<void(const char *)> Print;
+        typedef std::function<void(const char*)> Print;
         uint32 m_accountId;
         AccountTypes m_loginAccessLevel;
         Print m_print;
 
-    public:        
+    public:
         CliHandler(uint32 accountId, AccountTypes accessLevel, Print zprint)
             : m_accountId(accountId), m_loginAccessLevel(accessLevel), m_print(zprint) {}
 

@@ -69,11 +69,11 @@ void instance_molten_core::OnCreatureCreate(Creature* pCreature)
 {
     switch (pCreature->GetEntry())
     {
-            // Bosses
+        // Bosses
         case NPC_GARR:
         case NPC_SULFURON:
         case NPC_MAJORDOMO:
-            m_mNpcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+            m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
             break;
     }
 }
@@ -82,7 +82,7 @@ void instance_molten_core::OnObjectCreate(GameObject* pGo)
 {
     switch (pGo->GetEntry())
     {
-            // Runes
+        // Runes
         case GO_RUNE_KRESS:
         case GO_RUNE_MOHN:
         case GO_RUNE_BLAZ:
@@ -90,8 +90,8 @@ void instance_molten_core::OnObjectCreate(GameObject* pGo)
         case GO_RUNE_ZETH:
         case GO_RUNE_THERI:
         case GO_RUNE_KORO:
-            // Activate the rune if it was previously doused by a player (encounter set to SPECIAL) 
-            m_mGoEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
+            // Activate the rune if it was previously doused by a player (encounter set to SPECIAL)
+            m_goEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
             for (uint8 i = 0; i < MAX_MOLTEN_RUNES; ++i)
             {
                 if (m_aMoltenCoreRunes[i].m_uiRuneEntry == pGo->GetEntry() && GetData(m_aMoltenCoreRunes[i].m_uiType) == SPECIAL)
@@ -101,7 +101,7 @@ void instance_molten_core::OnObjectCreate(GameObject* pGo)
                 }
             }
             break;
-            // Runes' Flames Circles
+        // Runes' Flames Circles
         case GO_CIRCLE_MAGMADAR:
         case GO_CIRCLE_GEHENNAS:
         case GO_CIRCLE_GARR:
@@ -109,8 +109,8 @@ void instance_molten_core::OnObjectCreate(GameObject* pGo)
         case GO_CIRCLE_BARON_GEDDON:
         case GO_CIRCLE_SULFURON:
         case GO_CIRCLE_GOLEMAGG:
-            // Delete the Flames Circle around the rune if the boss guarding it is killed 
-            m_mGoEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
+            // Delete the Flames Circle around the rune if the boss guarding it is killed
+            m_goEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
             for (uint8 i = 0; i < MAX_MOLTEN_RUNES; ++i)
             {
                 if (m_aMoltenCoreRunes[i].m_uiFlamesCircleEntry == pGo->GetEntry() && (GetData(m_aMoltenCoreRunes[i].m_uiType) == SPECIAL || GetData(m_aMoltenCoreRunes[i].m_uiType) == DONE))
@@ -121,12 +121,12 @@ void instance_molten_core::OnObjectCreate(GameObject* pGo)
             }
             break;
 
-            // Majordomo event chest
+        // Majordomo event chest
         case GO_CACHE_OF_THE_FIRE_LORD:
-            // Ragnaros GOs
+        // Ragnaros GOs
         case GO_LAVA_STEAM:
         case GO_LAVA_SPLASH:
-            m_mGoEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
+            m_goEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
             break;
     }
 }
@@ -223,12 +223,12 @@ void instance_molten_core::DoSpawnMajordomoIfCan(bool bByPlayerEnter)
     // Summon Majordomo
     // If Majordomo encounter isn't done, summon at encounter place, else near Ragnaros
     uint8 uiSummonPos = m_auiEncounter[TYPE_MAJORDOMO] == DONE ? 1 : 0;
-    if (Creature* pMajordomo = pPlayer->SummonCreature(m_aMajordomoLocations[uiSummonPos].m_uiEntry, m_aMajordomoLocations[uiSummonPos].m_fX, m_aMajordomoLocations[uiSummonPos].m_fY, m_aMajordomoLocations[uiSummonPos].m_fZ, m_aMajordomoLocations[uiSummonPos].m_fO, TEMPSUMMON_MANUAL_DESPAWN, 2 * HOUR * IN_MILLISECONDS))
+    if (Creature* pMajordomo = pPlayer->SummonCreature(m_aMajordomoLocations[uiSummonPos].m_uiEntry, m_aMajordomoLocations[uiSummonPos].m_fX, m_aMajordomoLocations[uiSummonPos].m_fY, m_aMajordomoLocations[uiSummonPos].m_fZ, m_aMajordomoLocations[uiSummonPos].m_fO, TEMPSPAWN_MANUAL_DESPAWN, 2 * HOUR * IN_MILLISECONDS))
     {
         if (uiSummonPos)                                    // Majordomo encounter already done, set faction
         {
             pMajordomo->SetFactionTemporary(FACTION_MAJORDOMO_FRIENDLY, TEMPFACTION_RESTORE_RESPAWN);
-            pMajordomo->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_OOC_NOT_ATTACKABLE);
+            pMajordomo->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
             pMajordomo->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
         }
         else                                                // Else yell and summon adds
@@ -237,7 +237,7 @@ void instance_molten_core::DoSpawnMajordomoIfCan(bool bByPlayerEnter)
                 DoScriptText(SAY_MAJORDOMO_SPAWN, pMajordomo);
 
             for (uint8 i = 0; i < MAX_MAJORDOMO_ADDS; ++i)
-                pMajordomo->SummonCreature(m_aBosspawnLocs[i].m_uiEntry, m_aBosspawnLocs[i].m_fX, m_aBosspawnLocs[i].m_fY, m_aBosspawnLocs[i].m_fZ, m_aBosspawnLocs[i].m_fO, TEMPSUMMON_MANUAL_DESPAWN, DAY * IN_MILLISECONDS);
+                pMajordomo->SummonCreature(m_aBosspawnLocs[i].m_uiEntry, m_aBosspawnLocs[i].m_fX, m_aBosspawnLocs[i].m_fY, m_aBosspawnLocs[i].m_fZ, m_aBosspawnLocs[i].m_fO, TEMPSPAWN_MANUAL_DESPAWN, DAY * IN_MILLISECONDS);
         }
     }
 }

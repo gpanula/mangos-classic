@@ -129,7 +129,7 @@ enum QuestFlags
 {
     // Flags used at server and sent to client
     QUEST_FLAGS_NONE           = 0x00000000,
-    QUEST_FLAGS_STAY_ALIVE     = 0x00000001,                // Not used currently
+    QUEST_FLAGS_STAY_ALIVE     = 0x00000001,                // Quest is failed on dying
     QUEST_FLAGS_PARTY_ACCEPT   = 0x00000002,                // If player in party, all players that can accept this quest will receive confirmation box to accept quest CMSG_QUEST_CONFIRM_ACCEPT/SMSG_QUEST_CONFIRM_ACCEPT
     QUEST_FLAGS_EXPLORATION    = 0x00000004,                // Not used currently
     QUEST_FLAGS_SHARABLE       = 0x00000008,                // Can be shared: Player::CanShareQuest()
@@ -233,6 +233,7 @@ class Quest
         uint32 GetPointOpt() const { return PointOpt; }
         uint32 GetIncompleteEmote() const { return IncompleteEmote; }
         uint32 GetCompleteEmote() const { return CompleteEmote; }
+        uint32 GetDetailsEmoteCount() const { return m_detailsemotecount; }
         uint32 GetQuestStartScript() const { return QuestStartScript; }
         uint32 GetQuestCompleteScript() const { return QuestCompleteScript; }
 
@@ -280,6 +281,7 @@ class Quest
         uint32 m_reqCreatureOrGOcount;
         uint32 m_rewchoiceitemscount;
         uint32 m_rewitemscount;
+        uint32 m_detailsemotecount;                         // actual allowed value 0..4
 
         bool m_isActive;
 

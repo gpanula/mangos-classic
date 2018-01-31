@@ -77,7 +77,7 @@ int32 CalculateSpellDuration(SpellEntry const* spellInfo, Unit const* caster)
 {
     int32 duration = GetSpellDuration(spellInfo);
 
-    if (duration != -1 && caster)
+    if (duration != -1 && caster && !spellInfo->HasAttribute(SPELL_ATTR_EX3_NO_DONE_BONUS))
     {
         int32 maxduration = GetSpellMaxDuration(spellInfo);
 
@@ -114,28 +114,26 @@ uint32 GetSpellCastTime(SpellEntry const* spellInfo, Spell const* spell)
 
     SpellCastTimesEntry const* spellCastTimeEntry = sSpellCastTimesStore.LookupEntry(spellInfo->CastingTimeIndex);
 
-    // not all spells have cast time index and this is all is pasiive abilities
+    // not all spells have cast time index and this is all is passive abilities
     if (!spellCastTimeEntry)
         return 0;
 
     int32 castTime = spellCastTimeEntry->CastTime;
+
+    // Hunter Ranged spells need cast time + 0.5s to reflect tooltips, excluding Auto Shot
+    if (spellInfo->HasAttribute(SPELL_ATTR_RANGED) && (!spell || !spell->IsAutoRepeat()))
+        castTime += 500;
 
     if (spell)
     {
         if (Player* modOwner = spell->GetCaster()->GetSpellModOwner())
             modOwner->ApplySpellMod(spellInfo->Id, SPELLMOD_CASTING_TIME, castTime, spell);
 
-        if (!spellInfo->HasAttribute(SPELL_ATTR_ABILITY) && !spellInfo->HasAttribute(SPELL_ATTR_TRADESPELL))
+        if (!spellInfo->HasAttribute(SPELL_ATTR_ABILITY) && !spellInfo->HasAttribute(SPELL_ATTR_TRADESPELL) && !spellInfo->HasAttribute(SPELL_ATTR_EX3_NO_DONE_BONUS))
             castTime = int32(castTime * spell->GetCaster()->GetFloatValue(UNIT_MOD_CAST_SPEED));
-        else
-        {
-            if (spell->IsRangedSpell() && !spell->IsAutoRepeat())
-                castTime = int32(castTime * spell->GetCaster()->m_modAttackSpeedPct[RANGED_ATTACK]);
-        }
+        else if (spell->IsRangedSpell() && !spell->IsAutoRepeat())
+            castTime = int32(castTime * spell->GetCaster()->m_modAttackSpeedPct[RANGED_ATTACK]);
     }
-
-    if (spellInfo->HasAttribute(SPELL_ATTR_RANGED) && (!spell || !spell->IsAutoRepeat()))
-        castTime += 500;
 
     // [workaround] holy light need script effect, but 19968 spell for it have 2.5 cast time sec
     // it should be instant instead
@@ -416,8 +414,8 @@ SpellSpecific GetSpellSpecific(uint32 spellId)
 
     // Tracking spells (exclude Well Fed, some other always allowed cases)
     if (IsSpellHaveAura(spellInfo, SPELL_AURA_TRACK_CREATURES) ||
-        IsSpellHaveAura(spellInfo, SPELL_AURA_TRACK_STEALTHED) ||
-        (IsSpellHaveAura(spellInfo, SPELL_AURA_TRACK_RESOURCES) && !spellInfo->HasAttribute(SPELL_ATTR_PASSIVE) && !spellInfo->HasAttribute(SPELL_ATTR_CANT_CANCEL)))
+            IsSpellHaveAura(spellInfo, SPELL_AURA_TRACK_STEALTHED) ||
+            (IsSpellHaveAura(spellInfo, SPELL_AURA_TRACK_RESOURCES) && !spellInfo->HasAttribute(SPELL_ATTR_PASSIVE) && !spellInfo->HasAttribute(SPELL_ATTR_CANT_CANCEL)))
         return SPELL_TRACKER;
 
     // Elixirs can have different families, but potions mostly
@@ -2716,7 +2714,7 @@ void SpellMgr::CheckUsedSpells(char const* table) const
                 {
                     if (!spellEntry->IsFitToFamilyMask(familyMask))
                     {
-                        sLog.outError("Spell %u '%s' not fit to (" I64FMT ") but used in %s.", spell, name.c_str(), familyMask, code.c_str());
+                        sLog.outError("Spell %u '%s' not fit to (" UI64FMTD ") but used in %s.", spell, name.c_str(), familyMask, code.c_str());
                         continue;
                     }
                 }
@@ -2830,10 +2828,10 @@ void SpellMgr::CheckUsedSpells(char const* table) const
             if (!found)
             {
                 if (effectIdx >= 0)
-                    sLog.outError("Spells '%s' not found for family %i (" I64FMT ") icon(%i) visual(%i) category(%i) effect%d(%i) aura%d(%i) but used in %s",
+                    sLog.outError("Spells '%s' not found for family %i (" UI64FMTD ") icon(%i) visual(%i) category(%i) effect%d(%i) aura%d(%i) but used in %s",
                                   name.c_str(), family, familyMask, spellIcon, spellVisual, category, effectIdx + 1, effectType, effectIdx + 1, auraType, code.c_str());
                 else
-                    sLog.outError("Spells '%s' not found for family %i (" I64FMT ") icon(%i) visual(%i) category(%i) effect(%i) aura(%i) but used in %s",
+                    sLog.outError("Spells '%s' not found for family %i (" UI64FMTD ") icon(%i) visual(%i) category(%i) effect(%i) aura(%i) but used in %s",
                                   name.c_str(), family, familyMask, spellIcon, spellVisual, category, effectType, auraType, code.c_str());
                 continue;
             }
@@ -3052,6 +3050,16 @@ void SpellArea::ApplyOrRemoveSpellIfCan(Player* player, uint32 newZone, uint32 n
         player->RemoveAurasDueToSpell(spellId);
 }
 
+struct DoSpellAffectMasks
+{
+    DoSpellAffectMasks(SpellAffectMap& _spellAffectMap, uint8& _effectId, uint64& _spellAffectMask) : spellAffectMap(_spellAffectMap), effectId(_effectId), spellAffectMask(_spellAffectMask) {}
+    void operator()(uint32 spell_id) { spellAffectMap.insert(SpellAffectMap::value_type((spell_id << 8) + effectId, spellAffectMask)); }
+
+    SpellAffectMap& spellAffectMap;
+    uint8& effectId;
+    uint64& spellAffectMask;
+};
+
 void SpellMgr::LoadSpellAffects()
 {
     mSpellAffectMap.clear();                                // need for reload case
@@ -3096,6 +3104,16 @@ void SpellMgr::LoadSpellAffects()
             continue;
         }
 
+        uint32 first_id = GetFirstSpellInChain(entry);
+
+        if (first_id != entry)
+        {
+            //sLog.outErrorDb("Spell %u listed in `spell_affect` is not first rank (%u) in chain", entry, first_id);
+            sLog.outErrorDb("%u,", entry);
+            // prevent loading since it won't have an effect anyway
+            continue;
+        }
+
         if (spellInfo->Effect[effectId] != SPELL_EFFECT_APPLY_AURA || (
                     spellInfo->EffectApplyAuraName[effectId] != SPELL_AURA_ADD_FLAT_MODIFIER &&
                     spellInfo->EffectApplyAuraName[effectId] != SPELL_AURA_ADD_PCT_MODIFIER  &&
@@ -3119,6 +3137,9 @@ void SpellMgr::LoadSpellAffects()
         }
 
         mSpellAffectMap.insert(SpellAffectMap::value_type((entry << 8) + effectId, spellAffectMask));
+
+        DoSpellAffectMasks worker(mSpellAffectMap, effectId, spellAffectMask);
+        doForHighRanks(entry, worker);
 
         ++count;
     }

@@ -212,7 +212,7 @@ bool QuestAccept_npc_dalinda_malem(Player* pPlayer, Creature* pCreature, const Q
         if (npc_dalinda_malemAI* pEscortAI = dynamic_cast<npc_dalinda_malemAI*>(pCreature->AI()))
         {
             // TODO This faction change needs confirmation, also possible that we need to drop her PASSIVE flag
-            pCreature->SetFactionTemporary(FACTION_ESCORT_A_NEUTRAL_PASSIVE, TEMPFACTION_RESTORE_RESPAWN | TEMPFACTION_TOGGLE_PASSIVE);
+            pCreature->SetFactionTemporary(FACTION_ESCORT_A_NEUTRAL_PASSIVE, TEMPFACTION_RESTORE_RESPAWN | TEMPFACTION_TOGGLE_IMMUNE_TO_NPC);
             pEscortAI->Start(false, pPlayer, pQuest);
         }
     }
@@ -315,7 +315,7 @@ struct npc_melizza_brimbuzzleAI : public npc_escortAI, private DialogueHelper
                         // Summon 2 Marauders on each point
                         float fX, fY, fZ;
                         m_creature->GetRandomPoint(aMarauderSpawn[i].m_fX, aMarauderSpawn[i].m_fY, aMarauderSpawn[i].m_fZ, 7.0f, fX, fY, fZ);
-                        m_creature->SummonCreature(NPC_MARAUDINE_MARAUDER, fX, fY, fZ, 0.0f, TEMPSUMMON_DEAD_DESPAWN, 0);
+                        m_creature->SummonCreature(NPC_MARAUDINE_MARAUDER, fX, fY, fZ, 0.0f, TEMPSPAWN_DEAD_DESPAWN, 0);
                     }
                 }
                 break;
@@ -324,10 +324,10 @@ struct npc_melizza_brimbuzzleAI : public npc_escortAI, private DialogueHelper
                 {
                     float fX, fY, fZ;
                     m_creature->GetRandomPoint(wranglerSpawn.m_fX, wranglerSpawn.m_fY, wranglerSpawn.m_fZ, 10.0f, fX, fY, fZ);
-                    m_creature->SummonCreature(NPC_MARAUDINE_BONEPAW, fX, fY, fZ, 0.0f, TEMPSUMMON_DEAD_DESPAWN, 0);
+                    m_creature->SummonCreature(NPC_MARAUDINE_BONEPAW, fX, fY, fZ, 0.0f, TEMPSPAWN_DEAD_DESPAWN, 0);
 
                     m_creature->GetRandomPoint(wranglerSpawn.m_fX, wranglerSpawn.m_fY, wranglerSpawn.m_fZ, 10.0f, fX, fY, fZ);
-                    m_creature->SummonCreature(NPC_MARAUDINE_WRANGLER, fX, fY, fZ, 0.0f, TEMPSUMMON_DEAD_DESPAWN, 0);
+                    m_creature->SummonCreature(NPC_MARAUDINE_WRANGLER, fX, fY, fZ, 0.0f, TEMPSPAWN_DEAD_DESPAWN, 0);
                 }
                 break;
             case 12:
@@ -488,7 +488,7 @@ struct npc_cork_gizeltonAI : public ScriptedAI
                 {
                     float fX, fY, fZ;
                     m_creature->GetRandomPoint(aAmbushLocsBodyGuard[i + 4 * uiAmbushPoint].m_fX, aAmbushLocsBodyGuard[i + 4 * uiAmbushPoint].m_fY, aAmbushLocsBodyGuard[i + 4 * uiAmbushPoint].m_fZ, 7.0f, fX, fY, fZ);
-                    m_creature->SummonCreature(AmbushersBodyguard[i], fX, fY, fZ, 0.0f, TEMPSUMMON_DEAD_DESPAWN, 0);
+                    m_creature->SummonCreature(AmbushersBodyguard[i], fX, fY, fZ, 0.0f, TEMPSPAWN_DEAD_DESPAWN, 0);
                 }
                 break;
             case QUEST_GIZELTON_CARAVAN:
@@ -497,7 +497,7 @@ struct npc_cork_gizeltonAI : public ScriptedAI
                 {
                     float fX, fY, fZ;
                     m_creature->GetRandomPoint(aAmbushLocsGizelton[i + 3 * uiAmbushPoint].m_fX, aAmbushLocsGizelton[i + 3 * uiAmbushPoint].m_fY, aAmbushLocsGizelton[i + 3 * uiAmbushPoint].m_fZ, 7.0f, fX, fY, fZ);
-                    m_creature->SummonCreature(AmbushersGizleton[i], fX, fY, fZ, 0.0f, TEMPSUMMON_DEAD_DESPAWN, 0);
+                    m_creature->SummonCreature(AmbushersGizleton[i], fX, fY, fZ, 0.0f, TEMPSPAWN_DEAD_DESPAWN, 0);
                 }
                 break;
         }
@@ -554,19 +554,19 @@ struct npc_cork_gizeltonAI : public ScriptedAI
             {
                 case 209:
                     uiQuestStatus = 2;
-                    // First Ambush
+                // First Ambush
                 case 218:
                     if (Creature* pRigger = GetClosestCreatureWithEntry(m_creature, NPC_RIGGER_GIZELTON, 100.0f))
                         DoScriptText(SAY_RIGGER_AMBUSH1, pRigger);
                     DoAmbush(QUEST_GIZELTON_CARAVAN, 1);
                     break;
-                    // Second Ambush
+                // Second Ambush
                 case 225:
                     if (Creature* pRigger = GetClosestCreatureWithEntry(m_creature, NPC_RIGGER_GIZELTON, 100.0f))
                         DoScriptText(SAY_RIGGER_AMBUSH2, pRigger);
                     DoAmbush(QUEST_GIZELTON_CARAVAN, 2);
                     break;
-                    // Third Ambush
+                // Third Ambush
                 case 235:
                     if (Creature* pRigger = GetClosestCreatureWithEntry(m_creature, NPC_RIGGER_GIZELTON, 100.0f))
                         DoScriptText(SAY_RIGGER_AMBUSH1, pRigger);
@@ -707,7 +707,7 @@ struct npc_magrami_spectre : public ScriptedAI
     void JustRespawned() override
     {
         m_creature->CastSpell(m_creature, SPELL_GHOST_SPAWN_IN, TRIGGERED_NONE);
-        m_creature->CastSpell(m_creature, SPELL_BLUE_AURA,TRIGGERED_NONE);
+        m_creature->CastSpell(m_creature, SPELL_BLUE_AURA, TRIGGERED_NONE);
 
         switch (urand(0, 1))
         {

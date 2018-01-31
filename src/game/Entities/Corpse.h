@@ -64,7 +64,15 @@ class Corpse : public WorldObject
         void DeleteBonesFromWorld();
         void DeleteFromDB() const;
 
-        ObjectGuid const& GetOwnerGuid() const { return GetGuidValue(CORPSE_FIELD_OWNER); }
+        ObjectGuid const& GetOwnerGuid() const override { return GetGuidValue(CORPSE_FIELD_OWNER); }
+        void SetOwnerGuid(ObjectGuid guid) override { SetGuidValue(CORPSE_FIELD_OWNER, guid); }
+
+        uint8 getRace() const { return GetByteValue(CORPSE_FIELD_BYTES_1, 1); }
+        uint32 getRaceMask() const { return 1 << (getRace() - 1); }
+        uint8 getGender() const { return GetByteValue(CORPSE_FIELD_BYTES_1, 2); }
+
+        // faction template id
+        uint32 getFaction() const;
 
         time_t const& GetGhostTime() const { return m_time; }
         void ResetGhostTime() { m_time = time(nullptr); }

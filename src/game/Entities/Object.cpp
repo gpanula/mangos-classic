@@ -34,11 +34,12 @@
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Maps/ObjectPosSelector.h"
-#include "Entities/TemporarySummon.h"
+#include "Entities/TemporarySpawn.h"
 #include "Movement/packet_builder.h"
 #include "Entities/CreatureLinkingMgr.h"
 #include "Chat/Chat.h"
 #include "Loot/LootMgr.h"
+#include "Spells/SpellMgr.h"
 
 Object::Object(): m_updateFlag(0)
 {
@@ -320,7 +321,7 @@ void Object::BuildValuesUpdate(uint8 updatetype, ByteBuffer* data, UpdateMask* u
                 if (target != this && m_objectTypeId == TYPEID_PLAYER)
                 {
                     if (static_cast<Player const*>(this)->GetTeam() != static_cast<Player const*>(target)->GetTeam() ||
-                        !target->IsFriendlyTo(static_cast<Unit const*>(this)))
+                            !target->IsFriendlyTo(static_cast<Unit const*>(this)))
                     {
                         // not same faction or not friendly
                         sendPercent = true;
@@ -381,7 +382,7 @@ void Object::BuildValuesUpdate(uint8 updatetype, ByteBuffer* data, UpdateMask* u
                             if (target->getClass() != CLASS_HUNTER)
                                 appendValue &= ~UNIT_NPC_FLAG_STABLEMASTER;
                         }
-                        
+
                         if (appendValue & UNIT_NPC_FLAG_FLIGHTMASTER)
                         {
                             QuestRelationsMapBounds bounds = sObjectMgr.GetCreatureQuestRelationsMapBounds(((Creature*)this)->GetEntry());
@@ -913,9 +914,9 @@ void Object::ForceValuesUpdateAtIndex(uint32 index)
 }
 
 WorldObject::WorldObject() :
-    m_currMap(nullptr),
-    m_mapId(0), m_InstanceId(0),
-    m_isActiveObject(false)
+    m_isOnEventNotified(false),
+    m_currMap(nullptr), m_mapId(0),
+    m_InstanceId(0), m_isActiveObject(false)
 {
 }
 
@@ -1008,6 +1009,27 @@ float WorldObject::GetDistance(float x, float y, float z) const
     return (dist > 0 ? dist : 0);
 }
 
+float WorldObject::GetDistanceNoBoundingRadius(float x, float y, float z) const
+{
+    float dx = GetPositionX() - x;
+    float dy = GetPositionY() - y;
+    float dz = GetPositionZ() - z;
+    float dist = sqrt((dx * dx) + (dy * dy) + (dz * dz));
+    return dist;
+}
+
+float WorldObject::GetCombatDistance(const WorldObject* obj, bool forMeleeRange) const
+{
+    float radius = GetCombinedCombatReach(obj, forMeleeRange);
+
+    float dx = GetPositionX() - obj->GetPositionX();
+    float dy = GetPositionY() - obj->GetPositionY();
+    float dz = GetPositionZ() - obj->GetPositionZ();
+    float dist = sqrt((dx * dx) + (dy * dy) + (dz * dz)) - radius;
+
+    return (dist > 0.0f ? dist : 0.0f);
+}
+
 float WorldObject::GetDistance2d(const WorldObject* obj) const
 {
     float dx = GetPositionX() - obj->GetPositionX();
@@ -1061,6 +1083,22 @@ bool WorldObject::_IsWithinDist(WorldObject const* obj, float dist2compare, bool
         distsq += dz * dz;
     }
     float sizefactor = GetObjectBoundingRadius() + obj->GetObjectBoundingRadius();
+    float maxdist = dist2compare + sizefactor;
+
+    return distsq < maxdist * maxdist;
+}
+
+bool WorldObject::_IsWithinCombatDist(WorldObject const* obj, float dist2compare, bool is3D) const
+{
+    float dx = GetPositionX() - obj->GetPositionX();
+    float dy = GetPositionY() - obj->GetPositionY();
+    float distsq = dx * dx + dy * dy;
+    if (is3D)
+    {
+        float dz = GetPositionZ() - obj->GetPositionZ();
+        distsq += dz * dz;
+    }
+    float sizefactor = GetCombatReach() + obj->GetCombatReach();
     float maxdist = dist2compare + sizefactor;
 
     return distsq < maxdist * maxdist;
@@ -1196,18 +1234,16 @@ float WorldObject::GetAngle(const float x, const float y) const
     return ang;
 }
 
-bool WorldObject::HasInArc(const float arcangle, const WorldObject* obj) const
+bool WorldObject::HasInArc(const WorldObject* target, float arc /*= M_PI*/) const
 {
     // always have self in arc
-    if (obj == this)
+    if (target == this)
         return true;
-
-    float arc = arcangle;
 
     // move arc to range 0.. 2*pi
     arc = MapManager::NormalizeOrientation(arc);
 
-    float angle = GetAngle(obj);
+    float angle = GetAngle(target);
     angle -= m_position.o;
 
     // move angle to range -pi ... +pi
@@ -1226,11 +1262,11 @@ bool WorldObject::IsFacingTargetsBack(const WorldObject* target, float arc /*= M
         return false;
 
     //if target is facing the current object then we know its not possible that the current object would be facing the targets back
-    if (target->HasInArc(arc, this))
+    if (target->HasInArc(this, arc))
         return false;
 
     //if current object is not facing the target then we know the current object is not facing the target at all
-    if (!this->HasInArc(arc, target))
+    if (!this->HasInArc(target, arc))
         return false;
 
     return true;
@@ -1242,34 +1278,34 @@ bool WorldObject::IsFacingTargetsFront(const WorldObject* target, float arc /*= 
         return false;
 
     //if target is not facing the current object then we know its not possible that the current object would be facing the targets front
-    if (!target->HasInArc(arc, this))
+    if (!target->HasInArc(this, arc))
         return false;
 
     //if current object is not facing the target then we know the current object is not facing the target at all
-    if (!this->HasInArc(arc, target))
+    if (!this->HasInArc(target, arc))
         return false;
 
     return true;
 }
 
-bool WorldObject::isInFrontInMap(WorldObject const* target, float distance,  float arc) const
+bool WorldObject::isInFrontInMap(WorldObject const* target, float distance,  float arc /*= M_PI_F*/) const
 {
-    return IsWithinDistInMap(target, distance) && HasInArc(arc, target);
+    return IsWithinDistInMap(target, distance) && HasInArc(target, arc);
 }
 
-bool WorldObject::isInBackInMap(WorldObject const* target, float distance, float arc) const
+bool WorldObject::isInBackInMap(WorldObject const* target, float distance, float arc /*= M_PI_F*/) const
 {
-    return IsWithinDistInMap(target, distance) && !HasInArc(2 * M_PI_F - arc, target);
+    return IsWithinDistInMap(target, distance) && !HasInArc(target, 2 * M_PI_F - arc);
 }
 
-bool WorldObject::isInFront(WorldObject const* target, float distance,  float arc) const
+bool WorldObject::isInFront(WorldObject const* target, float distance,  float arc /*= M_PI_F*/) const
 {
-    return IsWithinDist(target, distance) && HasInArc(arc, target);
+    return IsWithinDist(target, distance) && HasInArc(target, arc);
 }
 
-bool WorldObject::isInBack(WorldObject const* target, float distance, float arc) const
+bool WorldObject::isInBack(WorldObject const* target, float distance, float arc /*= M_PI_F*/) const
 {
-    return IsWithinDist(target, distance) && !HasInArc(2 * M_PI_F - arc, target);
+    return IsWithinDist(target, distance) && !HasInArc(target, 2 * M_PI_F - arc);
 }
 
 void WorldObject::GetRandomPoint(float x, float y, float z, float distance, float& rand_x, float& rand_y, float& rand_z, float minDist /*=0.0f*/, float const* ori /*=nullptr*/) const
@@ -1369,6 +1405,18 @@ void WorldObject::UpdateAllowedPositionZ(float x, float y, float& z, Map* atMap 
             break;
         }
     }
+}
+
+float WorldObject::GetCombinedCombatReach(WorldObject const* pVictim, bool forMeleeRange, float flat_mod) const
+{
+    // The measured values show BASE_MELEE_OFFSET in (1.3224, 1.342)
+    float reach = GetCombatReach() + pVictim->GetCombatReach() +
+                  BASE_MELEERANGE_OFFSET + flat_mod;
+
+    if (forMeleeRange && reach < ATTACK_DISTANCE)
+        reach = ATTACK_DISTANCE;
+
+    return reach;
 }
 
 bool WorldObject::IsPositionValid() const
@@ -1489,11 +1537,16 @@ void WorldObject::MonsterText(MangosStringLocale const* textData, Unit const* ta
         {
             MaNGOS::MonsterChatBuilder say_build(*this, CHAT_MSG_MONSTER_YELL, textData, textData->LanguageId, target);
             MaNGOS::LocalizedPacketDo<MaNGOS::MonsterChatBuilder> say_do(say_build);
-            uint32 zoneid = GetZoneId();
-            Map::PlayerList const& pList = GetMap()->GetPlayers();
-            for (Map::PlayerList::const_iterator itr = pList.begin(); itr != pList.end(); ++itr)
-                if (itr->getSource()->GetZoneId() == zoneid)
-                    say_do(itr->getSource());
+            uint32 zoneId = GetZoneId();
+            GetMap()->ExecuteMapWorkerZone(zoneId, std::bind(&MaNGOS::LocalizedPacketDo<MaNGOS::MonsterChatBuilder>::operator(), &say_do, std::placeholders::_1));
+            break;
+        }
+        case CHAT_TYPE_ZONE_EMOTE:
+        {
+            MaNGOS::MonsterChatBuilder say_build(*this, CHAT_MSG_MONSTER_EMOTE, textData, textData->LanguageId, target);
+            MaNGOS::LocalizedPacketDo<MaNGOS::MonsterChatBuilder> say_do(say_build);
+            uint32 zoneId = GetZoneId();
+            GetMap()->ExecuteMapWorkerZone(zoneId, std::bind(&MaNGOS::LocalizedPacketDo<MaNGOS::MonsterChatBuilder>::operator(), &say_do, std::placeholders::_1));
             break;
         }
     }
@@ -1547,6 +1600,22 @@ void WorldObject::SetMap(Map* map)
     m_InstanceId = map->GetInstanceId();
 }
 
+void WorldObject::AddToWorld()
+{
+    if (m_isOnEventNotified)
+        m_currMap->AddToOnEventNotified(this);
+
+    Object::AddToWorld();
+}
+
+void WorldObject::RemoveFromWorld()
+{
+    if (m_isOnEventNotified)
+        m_currMap->RemoveFromOnEventNotified(this);
+
+    Object::RemoveFromWorld();
+}
+
 TerrainInfo const* WorldObject::GetTerrain() const
 {
     MANGOS_ASSERT(m_currMap);
@@ -1558,7 +1627,7 @@ void WorldObject::AddObjectToRemoveList()
     GetMap()->AddObjectToRemoveList(this);
 }
 
-Creature* WorldObject::SummonCreature(uint32 id, float x, float y, float z, float ang, TempSummonType spwtype, uint32 despwtime, bool asActiveObject/* = false*/, bool setRun/* = false*/, uint32 pathId/* = 0*/)
+Creature* WorldObject::SummonCreature(uint32 id, float x, float y, float z, float ang, TempSpawnType spwtype, uint32 despwtime, bool asActiveObject/* = false*/, bool setRun/* = false*/, uint32 pathId/* = 0*/)
 {
     CreatureInfo const* cinfo = ObjectMgr::GetCreatureTemplate(id);
     if (!cinfo)
@@ -1567,7 +1636,7 @@ Creature* WorldObject::SummonCreature(uint32 id, float x, float y, float z, floa
         return nullptr;
     }
 
-    TemporarySummon* pCreature = new TemporarySummon(GetObjectGuid());
+    TemporarySpawn* pCreature = new TemporarySpawn(GetObjectGuid());
 
     Team team = TEAM_NONE;
     if (GetTypeId() == TYPEID_PLAYER)
@@ -1809,35 +1878,52 @@ void WorldObject::GetNearPoint(WorldObject const* searcher, float& x, float& y, 
         UpdateGroundPositionZ(x, y, z);
 }
 
-void WorldObject::PlayDistanceSound(uint32 sound_id, Player const* target /*= nullptr*/) const
+void WorldObject::PlayDistanceSound(uint32 sound_id, PlayPacketParameters parameters /*= PlayPacketParameters(PLAY_SET)*/) const
 {
     WorldPacket data(SMSG_PLAY_OBJECT_SOUND, 4 + 8);
     data << uint32(sound_id);
     data << GetObjectGuid();
-    if (target)
-        target->SendDirectMessage(data);
-    else
-        SendMessageToSet(data, true);
+    HandlePlayPacketSettings(data, parameters);
 }
 
-void WorldObject::PlayDirectSound(uint32 sound_id, Player const* target /*= nullptr*/) const
+void WorldObject::PlayDirectSound(uint32 sound_id, PlayPacketParameters parameters /*= PlayPacketParameters(PLAY_SET)*/) const
 {
     WorldPacket data(SMSG_PLAY_SOUND, 4);
     data << uint32(sound_id);
-    if (target)
-        target->SendDirectMessage(data);
-    else
-        SendMessageToSet(data, true);
+    HandlePlayPacketSettings(data, parameters);
 }
 
-void WorldObject::PlayMusic(uint32 sound_id, Player const* target /*= nullptr*/) const
+void WorldObject::PlayMusic(uint32 sound_id, PlayPacketParameters parameters /*= PlayPacketParameters(PLAY_SET)*/) const
 {
     WorldPacket data(SMSG_PLAY_MUSIC, 4);
     data << uint32(sound_id);
-    if (target)
-        target->SendDirectMessage(data);
-    else
-        SendMessageToSet(data, true);
+    HandlePlayPacketSettings(data, parameters);
+}
+
+void WorldObject::HandlePlayPacketSettings(WorldPacket& msg, PlayPacketParameters& parameters) const
+{
+    switch (parameters.setting)
+    {
+        case PLAY_SET:
+            SendMessageToSet(msg, true);
+            break;
+        case PLAY_TARGET:
+            if (Player const* target = parameters.target.target)
+                target->SendDirectMessage(msg);
+            break;
+        case PLAY_MAP:
+            if (IsInWorld())
+                GetMap()->MessageMapBroadcast(this, msg);
+            break;
+        case PLAY_ZONE:
+            if (IsInWorld())
+                GetMap()->MessageMapBroadcastZone(this, msg, parameters.areaOrZone.id);
+            break;
+        case PLAY_AREA:
+            if (IsInWorld())
+                GetMap()->MessageMapBroadcastArea(this, msg, parameters.areaOrZone.id);
+            break;
+    }
 }
 
 void WorldObject::UpdateVisibilityAndView()
@@ -1906,7 +1992,7 @@ bool WorldObject::IsControlledByPlayer() const
             return ((GameObject*)this)->GetOwnerGuid().IsPlayer();
         case TYPEID_UNIT:
         case TYPEID_PLAYER:
-            return ((Unit*)this)->IsCharmerOrOwnerPlayerOrPlayerItself();
+            return ((Unit*)this)->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
         case TYPEID_DYNAMICOBJECT:
             return ((DynamicObject*)this)->GetCasterGuid().IsPlayer();
         case TYPEID_CORPSE:
@@ -1937,4 +2023,296 @@ void WorldObject::SetActiveObjectState(bool active)
             GetMap()->AddToActive(this);
     }
     m_isActiveObject = active;
+}
+
+void WorldObject::SetNotifyOnEventState(bool state)
+{
+    if (state == m_isOnEventNotified)
+        return;
+
+    m_isOnEventNotified = state;
+
+    if (!IsInWorld())
+        return;
+
+    if (state)
+        GetMap()->AddToOnEventNotified(this);
+    else
+        GetMap()->RemoveFromOnEventNotified(this);
+}
+
+void WorldObject::AddGCD(SpellEntry const& spellEntry, uint32 forcedDuration /*= 0*/, bool /*updateClient = false*/)
+{
+    uint32 gcdRecTime = forcedDuration ? forcedDuration : spellEntry.StartRecoveryTime;
+    if (!gcdRecTime)
+        return;
+
+    m_GCDCatMap.emplace(spellEntry.StartRecoveryCategory, std::chrono::milliseconds(gcdRecTime) + GetMap()->GetCurrentClockTime());
+}
+
+bool WorldObject::HaveGCD(SpellEntry const* spellEntry) const
+{
+    if (spellEntry)
+    {
+        auto gcdItr = m_GCDCatMap.find(spellEntry->StartRecoveryCategory);
+        if (gcdItr != m_GCDCatMap.end())
+            return true;
+        return false;
+    }
+
+    return !m_GCDCatMap.empty();
+}
+
+void WorldObject::AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* itemProto /*= nullptr*/, bool permanent /*= false*/, uint32 forcedDuration /*= 0*/)
+{
+    uint32 recTimeDuration = forcedDuration ? forcedDuration : spellEntry.RecoveryTime;
+    m_cooldownMap.AddCooldown(GetMap()->GetCurrentClockTime(), spellEntry.Id, recTimeDuration, spellEntry.Category, spellEntry.CategoryRecoveryTime);
+}
+
+void WorldObject::UpdateCooldowns(TimePoint const& now)
+{
+    // handle GCD
+    auto cdItr = m_GCDCatMap.begin();
+    while (cdItr != m_GCDCatMap.end())
+    {
+        auto& cd = cdItr->second;
+        if (cd <= now)
+            cdItr = m_GCDCatMap.erase(cdItr);
+        else
+            ++cdItr;
+    }
+
+    // handle spell and category cooldowns
+    m_cooldownMap.Update(now);
+
+    // handle spell lockouts
+    auto lockoutCDItr = m_lockoutMap.begin();
+    while (lockoutCDItr != m_lockoutMap.end())
+    {
+        if (lockoutCDItr->second <= now)
+            lockoutCDItr = m_lockoutMap.erase(lockoutCDItr);
+        else
+            ++lockoutCDItr;
+    }
+}
+
+bool WorldObject::CheckLockout(SpellSchoolMask schoolMask) const
+{
+    for (auto& lockoutItr : m_lockoutMap)
+    {
+        SpellSchoolMask lockoutSchoolMask = SpellSchoolMask(1 << lockoutItr.first);
+        if (lockoutSchoolMask & schoolMask)
+            return true;
+    }
+
+    return false;
+}
+
+bool WorldObject::GetExpireTime(SpellEntry const& spellEntry, TimePoint& expireTime, bool& isPermanent)
+{
+    TimePoint resultExpireTime;
+    auto spellItr = m_cooldownMap.FindBySpellId(spellEntry.Id);
+    if (spellItr != m_cooldownMap.end())
+    {
+        auto& cdData = spellItr->second;
+        if (cdData->IsPermanent())
+        {
+            isPermanent = true;
+            return true;
+        }
+
+        TimePoint spellExpireTime = TimePoint();
+        TimePoint catExpireTime = TimePoint();
+        bool foundSpellCD = cdData->GetSpellCDExpireTime(spellExpireTime);
+        bool foundCatCD = cdData->GetSpellCDExpireTime(catExpireTime);
+        if (foundCatCD || foundSpellCD)
+        {
+            expireTime = spellExpireTime > catExpireTime ? spellExpireTime : catExpireTime;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool WorldObject::IsSpellReady(SpellEntry const& spellEntry, ItemPrototype const* itemProto /*= nullptr*/) const
+{
+    uint32 spellCategory = spellEntry.Category;
+
+    // overwrite category by provided category in item prototype during item cast if need
+    if (itemProto)
+    {
+        for (int idx = 0; idx < MAX_ITEM_PROTO_SPELLS; ++idx)
+        {
+            if (itemProto->Spells[idx].SpellId == spellEntry.Id)
+            {
+                spellCategory = itemProto->Spells[idx].SpellCategory;
+                break;
+            }
+        }
+    }
+
+    if (m_cooldownMap.FindBySpellId(spellEntry.Id) != m_cooldownMap.end())
+        return false;
+
+    if (spellCategory && m_cooldownMap.FindByCategory(spellCategory) != m_cooldownMap.end())
+        return false;
+
+    if (spellEntry.PreventionType == SPELL_PREVENTION_TYPE_SILENCE && CheckLockout(GetSpellSchoolMask(&spellEntry)))
+        return false;
+
+    return true;
+}
+
+bool WorldObject::IsSpellReady(uint32 spellId, ItemPrototype const* itemProto /*= nullptr*/) const
+{
+    SpellEntry const* spellEntry = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
+    if (!spellEntry)
+        return false;
+
+    return IsSpellReady(*spellEntry, itemProto);
+}
+
+void WorldObject::LockOutSpells(SpellSchoolMask schoolMask, uint32 duration)
+{
+    for (uint32 i = 0; i < MAX_SPELL_SCHOOL; ++i)
+    {
+        if (schoolMask & (1 << i))
+            m_lockoutMap.emplace(SpellSchools(i), std::chrono::milliseconds(duration) + GetMap()->GetCurrentClockTime());
+    }
+}
+
+void WorldObject::RemoveSpellCooldown(uint32 spellId, bool updateClient /*= true*/)
+{
+    SpellEntry const* spellEntry = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
+    if (!spellEntry)
+        return;
+
+    RemoveSpellCooldown(*spellEntry, updateClient);
+}
+
+void WorldObject::RemoveSpellCooldown(SpellEntry const& spellEntry, bool updateClient /*= true*/)
+{
+    m_cooldownMap.RemoveBySpellId(spellEntry.Id);
+}
+
+void WorldObject::RemoveSpellCategoryCooldown(uint32 category, bool updateClient /*= true*/)
+{
+    m_cooldownMap.RemoveByCategory(category);
+}
+
+void WorldObject::ResetGCD(SpellEntry const* spellEntry /*= nullptr*/)
+{
+    if (!spellEntry)
+    {
+        m_GCDCatMap.clear();
+        return;
+    }
+
+    auto gcdItr = m_GCDCatMap.find(spellEntry->StartRecoveryCategory);
+    if (gcdItr != m_GCDCatMap.end())
+        m_GCDCatMap.erase(gcdItr);
+}
+
+void ConvertMillisecondToStr(std::chrono::milliseconds& duration, std::stringstream& durationStr)
+{
+    std::chrono::minutes mm = std::chrono::duration_cast<std::chrono::minutes>(duration % std::chrono::hours(1));
+    std::chrono::seconds ss = std::chrono::duration_cast<std::chrono::seconds>(duration % std::chrono::minutes(1));
+    std::chrono::milliseconds msec = std::chrono::duration_cast<std::chrono::milliseconds>(duration % std::chrono::seconds(1));
+    durationStr << mm.count() << "m " << ss.count() << "s " << msec.count() << "ms";
+}
+
+void WorldObject::PrintCooldownList(ChatHandler& chat) const
+{
+    // print gcd
+    auto now = GetMap()->GetCurrentClockTime();
+    uint32 cdCount = 0;
+    uint32 permCDCount = 0;
+
+    for (auto& cdItr : m_GCDCatMap)
+    {
+        auto& cdData = cdItr.second;
+        std::stringstream cdLine;
+        std::stringstream durationStr;
+        if (cdData > now)
+        {
+            auto cdDuration = cdData - now;
+            ConvertMillisecondToStr(cdDuration, durationStr);
+            ++cdCount;
+        }
+        else
+            continue;
+
+        cdLine << "GCD category" << "(" << cdItr.first << ") have " << durationStr.str() << " cd";
+        chat.PSendSysMessage("%s", cdLine.str().c_str());
+    }
+
+    // print spell and category cd
+    for (auto& cdItr : m_cooldownMap)
+    {
+        auto& cdData = cdItr.second;
+        std::stringstream cdLine;
+        std::stringstream durationStr("permanent");
+        std::stringstream spellStr;
+        std::stringstream catStr;
+        if (cdData->IsPermanent())
+            ++permCDCount;
+        else
+        {
+            TimePoint spellExpireTime;
+            TimePoint catExpireTime;
+            bool foundSpellCD = cdData->GetSpellCDExpireTime(spellExpireTime);
+            bool foundcatCD = cdData->GetCatCDExpireTime(catExpireTime);
+
+            if (foundSpellCD && spellExpireTime > now)
+            {
+                auto cdDuration = std::chrono::duration_cast<std::chrono::milliseconds>(spellExpireTime - now);
+                spellStr << "RecTime(";
+                ConvertMillisecondToStr(cdDuration, spellStr);
+                spellStr << ")";
+            }
+
+            if (foundcatCD && catExpireTime > now)
+            {
+                auto cdDuration = std::chrono::duration_cast<std::chrono::milliseconds>(catExpireTime - now);
+                if (foundSpellCD)
+                    catStr << ", ";
+                catStr << "CatRecTime(";
+                ConvertMillisecondToStr(cdDuration, catStr);
+                catStr << ")";
+            }
+
+            if (!foundSpellCD && !foundcatCD)
+                continue;
+
+            durationStr << spellStr.str() << catStr.str();
+            ++cdCount;
+        }
+
+        cdLine << "Spell" << "(" << cdItr.first << ") have " << durationStr.str() << " cd";
+        chat.PSendSysMessage("%s", cdLine.str().c_str());
+    }
+
+    // print spell lockout
+    static std::string schoolName[] = { "SPELL_SCHOOL_NORMAL", "SPELL_SCHOOL_HOLY", "SPELL_SCHOOL_FIRE", "SPELL_SCHOOL_NATURE", "SPELL_SCHOOL_FROST", "SPELL_SCHOOL_SHADOW", "SPELL_SCHOOL_ARCANE" };
+
+    for (auto& lockoutItr : m_lockoutMap)
+    {
+        SpellSchoolMask lockoutSchoolMask = SpellSchoolMask(1 << lockoutItr.first);
+        std::stringstream cdLine;
+        std::stringstream durationStr;
+        auto& cdData = lockoutItr.second;
+        if (cdData > now)
+        {
+            auto cdDuration = std::chrono::duration_cast<std::chrono::milliseconds>(cdData - now);
+            ConvertMillisecondToStr(cdDuration, durationStr);
+            ++cdCount;
+        }
+        else
+            continue;
+        cdLine << "LOCKOUT for " << schoolName[lockoutItr.first] << " with " << durationStr.str() << " remaining time cd";
+        chat.PSendSysMessage("%s", cdLine.str().c_str());
+    }
+
+    chat.PSendSysMessage("Found %u cooldown%s.", cdCount, (cdCount > 1) ? "s" : "");
+    chat.PSendSysMessage("Found %u permanent cooldown%s.", permCDCount, (permCDCount > 1) ? "s" : "");
 }

@@ -42,7 +42,8 @@ struct world_map_eastern_kingdoms : public ScriptedMap
             case NPC_BOLVAR:
             case NPC_PRESTOR:
             case NPC_WINDSOR:
-                m_mNpcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+                m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+                break;
         }
     }
 
@@ -81,7 +82,7 @@ struct world_map_kalimdor : public ScriptedMap
     void OnCreatureCreate(Creature* pCreature)
     {
         if (pCreature->GetEntry() == NPC_MURKDEEP)
-            m_mNpcEntryGuidStore[NPC_MURKDEEP] = pCreature->GetObjectGuid();
+            m_npcEntryGuidStore[NPC_MURKDEEP] = pCreature->GetObjectGuid();
     }
 
     void OnCreatureDeath(Creature* pCreature)
@@ -101,7 +102,7 @@ struct world_map_kalimdor : public ScriptedMap
                         {
                             pCreature->GetRandomPoint(aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][0], aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][1], aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][2], 5.0f, fX, fY, fZ);
 
-                            if (Creature* pTemp = pCreature->SummonCreature(NPC_GREYMIST_WARRIOR, fX, fY, fZ, aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][3], TEMPSUMMON_DEAD_DESPAWN, 0))
+                            if (Creature* pTemp = pCreature->SummonCreature(NPC_GREYMIST_WARRIOR, fX, fY, fZ, aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][3], TEMPSPAWN_DEAD_DESPAWN, 0))
                             {
                                 pTemp->SetWalk(false);
                                 pTemp->GetRandomPoint(aSpawnLocations[POS_IDX_MURKDEEP_MOVE][0], aSpawnLocations[POS_IDX_MURKDEEP_MOVE][1], aSpawnLocations[POS_IDX_MURKDEEP_MOVE][2], 5.0f, fX, fY, fZ);
@@ -126,7 +127,7 @@ struct world_map_kalimdor : public ScriptedMap
                         {
                             pCreature->GetRandomPoint(aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][0], aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][1], aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][2], 5.0f, fX, fY, fZ);
 
-                            if (Creature* pTemp = pCreature->SummonCreature(!i ? NPC_MURKDEEP : NPC_GREYMIST_HUNTER, fX, fY, fZ, aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][3], TEMPSUMMON_DEAD_DESPAWN, 0))
+                            if (Creature* pTemp = pCreature->SummonCreature(!i ? NPC_MURKDEEP : NPC_GREYMIST_HUNTER, fX, fY, fZ, aSpawnLocations[POS_IDX_MURKDEEP_SPAWN][3], TEMPSPAWN_DEAD_DESPAWN, 0))
                             {
                                 pTemp->SetWalk(false);
                                 pTemp->GetRandomPoint(aSpawnLocations[POS_IDX_MURKDEEP_MOVE][0], aSpawnLocations[POS_IDX_MURKDEEP_MOVE][1], aSpawnLocations[POS_IDX_MURKDEEP_MOVE][2], 5.0f, fX, fY, fZ);
@@ -146,7 +147,7 @@ struct world_map_kalimdor : public ScriptedMap
         switch (pGo->GetEntry())
         {
             case GO_GHOST_MAGNET:
-                m_vGOEvents.push_back({ pGo->GetObjectGuid(),0,0 }); // insert new event with 0 timer
+                m_vGOEvents.push_back({ pGo->GetObjectGuid(), 0, 0 }); // insert new event with 0 timer
                 pGo->SetActiveObjectState(true);
                 break;
         }
@@ -166,7 +167,7 @@ struct world_map_kalimdor : public ScriptedMap
 
             return false;
         }
-            
+
 
         if (GameObject* go = instance->GetGameObject(eventData.guid))
         {
@@ -177,7 +178,7 @@ struct world_map_kalimdor : public ScriptedMap
                 uint32 random = urand(0, 35);
                 float xR = x + random, yR = y + (40 - random), zR = z;
                 instance->GetHeightInRange(xR, yR, zR);
-                Creature* creature = go->SummonCreature(NPC_MAGRAMI_SPECTRE, xR, yR, zR, 0, TEMPSUMMON_TIMED_OOC_OR_DEAD_DESPAWN, 180000); // add more timed logic here
+                Creature* creature = go->SummonCreature(NPC_MAGRAMI_SPECTRE, xR, yR, zR, 0, TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, 180000); // add more timed logic here
                 instance->GetReachableRandomPointOnGround(x, y, z, 10.0f); // get position to which spectre will walk
                 eventData.phaseCounter++;
                 eventData.summonedMagrami.push_back(creature->GetObjectGuid());
@@ -196,7 +197,7 @@ struct world_map_kalimdor : public ScriptedMap
             for (auto iter = m_vGOEvents.begin(); iter != m_vGOEvents.end();)
             {
                 iter->despawnTimer += diff;
-                if (!GhostOPlasmEventStep((*iter)))                
+                if (!GhostOPlasmEventStep((*iter)))
                     iter = m_vGOEvents.erase(iter);
                 else
                     ++iter;

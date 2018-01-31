@@ -134,6 +134,8 @@ class WorldSession
         void SizeError(WorldPacket const& packet, uint32 size) const;
 
         void SendPacket(WorldPacket const& packet) const;
+        void SendExpectedSpamRecords();
+        void SendMotd(Player* currChar);
         void SendNotification(const char* format, ...) const ATTR_PRINTF(2, 3);
         void SendNotification(int32 string_id, ...) const;
         void SendPetNameInvalid(uint32 error, const std::string& name) const;
@@ -147,7 +149,12 @@ class WorldSession
         Player* GetPlayer() const { return _player; }
         char const* GetPlayerName() const;
         void SetSecurity(AccountTypes security) { _security = security; }
-        const std::string &GetRemoteAddress() const { return m_Socket->GetRemoteAddress(); }
+#ifdef BUILD_PLAYERBOT
+        // Players connected without socket are bot
+        const std::string GetRemoteAddress() const { return m_Socket ? m_Socket->GetRemoteAddress() : "bot"; }
+#else
+        const std::string GetRemoteAddress() const { return m_Socket->GetRemoteAddress(); }
+#endif
         void SetPlayer(Player* plr) { _player = plr; }
 
         /// Session in auth.queue currently
@@ -255,7 +262,7 @@ class WorldSession
         void SendSaveGuildEmblem(uint32 msg) const;
         void SendBattleGroundJoinError(uint8 err) const;
 
-    static void BuildPartyMemberStatsChangedPacket(Player* player, WorldPacket& data);
+        static void BuildPartyMemberStatsChangedPacket(Player* player, WorldPacket& data);
 
         // Account mute time
         time_t m_muteTime;
@@ -657,7 +664,7 @@ class WorldSession
         void LogUnprocessedTail(WorldPacket const& packet) const;
 
         std::mutex m_logoutMutex;                           // this mutex is necessary to avoid two simultaneous logouts due to a valid logout request and socket error
-        Player * _player;
+        Player* _player;
         std::shared_ptr<WorldSocket> m_Socket;              // socket pointer is owned by the network thread which created it
 
         AccountTypes _security;
