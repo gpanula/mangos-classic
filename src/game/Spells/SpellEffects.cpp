@@ -453,10 +453,11 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                     return;
                 }
                 case 9204:                                  // Hate to Zero
+                case 20538:
+                case 26569:
+                case 26637:
                 {
-                    if (unitTarget)
-                        m_caster->getThreatManager().modifyThreatPercent(unitTarget, -100);
-
+                    m_caster->getThreatManager().modifyThreatPercent(unitTarget, -100);
                     return;
                 }
                 case 9976:                                  // Polly Eats the E.C.A.C.
@@ -742,7 +743,7 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                 case 20577:                                 // Cannibalize
                 {
                     if (unitTarget)
-                        m_caster->CastSpell(m_caster, 20578, TRIGGERED_OLD_TRIGGERED, nullptr);
+                        m_caster->CastSpell(m_caster, 20578, TRIGGERED_NONE);
 
                     return;
                 }
@@ -860,8 +861,6 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                 }
                 case 23133:                                 // Gnomish Battle Chicken
                 {
-                    // THIS CASE IS BROKEN! - SUMMON_TOTEM for a guardian pet?
-                    // Our SUMMON_TOTEM doesn't seem to be able to handle it anyway.
                     if (m_CastItem)
                         m_caster->CastSpell(m_caster, 13166, TRIGGERED_OLD_TRIGGERED, m_CastItem);
 
@@ -1075,6 +1074,19 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                 case 26074:                                 // Holiday Cheer
                 {
                     // implemented at client side
+                    return;
+                }
+                case 26374:                                 // Elune's Candle
+                {
+                    if (unitTarget->GetTypeId() == TYPEID_UNIT && unitTarget->GetEntry() == 15467)  // Omen
+                    {
+                        uint32 eluneCandle[5] = { 26622, 26623, 26624, 26625, 26649 };
+                        m_caster->CastSpell(unitTarget, eluneCandle[urand(0, 4)], TRIGGERED_OLD_TRIGGERED); // Damage (random visual)
+                        return;
+                    }
+                    // Default harmless spell
+                    m_caster->CastSpell(unitTarget, 26636, TRIGGERED_OLD_TRIGGERED);
+
                     return;
                 }
                 case 26626:                                 // Mana Burn Area
@@ -1395,7 +1407,7 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                             return;
                     }
 
-                    if (m_caster->IsFriendlyTo(unitTarget))
+                    if (m_caster->CanAssist(unitTarget))
                         m_caster->CastSpell(unitTarget, heal, TRIGGERED_OLD_TRIGGERED);
                     else
                         m_caster->CastSpell(unitTarget, hurt, TRIGGERED_OLD_TRIGGERED);
@@ -2464,7 +2476,10 @@ void Spell::EffectSummon(SpellEffectIndex eff_idx)
     spawnCreature->AI()->SetReactState(REACT_DEFENSIVE);
     spawnCreature->InitPetCreateSpells();
 
-    m_caster->SetPet(spawnCreature);
+    if (spawnCreature->getPetType() == GUARDIAN_PET)
+        m_caster->AddGuardian(spawnCreature);
+    else
+        m_caster->SetPet(spawnCreature);
 
     if (m_caster->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
         spawnCreature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
@@ -3329,7 +3344,10 @@ void Spell::EffectSummonPet(SpellEffectIndex eff_idx)
     NewSummon->AIM_Initialize();
     NewSummon->AI()->SetReactState(REACT_DEFENSIVE);
 
-    m_caster->SetPet(NewSummon);
+    if (NewSummon->getPetType() == GUARDIAN_PET)
+        m_caster->AddGuardian(NewSummon);
+    else
+        m_caster->SetPet(NewSummon);
     DEBUG_LOG("New Pet has guid %u", NewSummon->GetGUIDLow());
 
     if (m_caster->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
@@ -3423,7 +3441,8 @@ void Spell::EffectTaunt(SpellEffectIndex /*eff_idx*/)
     // Also use this effect to set the taunter's threat to the taunted creature's highest value
     if (unitTarget->CanHaveThreatList() && unitTarget->getThreatManager().getCurrentVictim())
     {
-        unitTarget->getThreatManager().addThreat(m_caster, unitTarget->getThreatManager().getCurrentVictim()->getThreat());
+        float addedThreat = unitTarget->getThreatManager().getCurrentVictim()->getThreat() - unitTarget->getThreatManager().getThreat(m_caster);
+        unitTarget->getThreatManager().addThreatDirectly(m_caster, addedThreat);
         unitTarget->getThreatManager().setCurrentVictimByTarget(m_caster); // force changes the target to caster of taunt
     }
     m_spellLog.AddLog(uint32(SPELL_EFFECT_ATTACK_ME), unitTarget->GetObjectGuid());
@@ -3873,6 +3892,14 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                     m_caster->CastSpell(unitTarget, spellId, TRIGGERED_OLD_TRIGGERED);
                     return;
                 }
+                case 24731:                                    // Cannon Fire
+                {
+                    if (!unitTarget || m_caster->GetTypeId() != TYPEID_PLAYER)
+                        return;
+
+                    unitTarget->CastSpell(m_caster, 24742, TRIGGERED_OLD_TRIGGERED);
+                    return;
+                }
                 case 24737:                                 // Ghost Costume
                 {
                     if (!unitTarget || unitTarget->GetTypeId() != TYPEID_PLAYER)
@@ -3880,6 +3907,14 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
 
                     // Ghost Costume (male or female)
                     m_caster->CastSpell(unitTarget, unitTarget->getGender() == GENDER_MALE ? 24735 : 24736, TRIGGERED_OLD_TRIGGERED);
+                    return;
+                }
+                case 24742:                                 // Magic Wings
+                {
+                    if(!unitTarget)
+                        return;
+
+                    unitTarget->RemoveAurasDueToSpell(24754);   // Darkmoon Faire Cannon root aura
                     return;
                 }
                 case 24751:                                 // Trick or Treat
@@ -4178,8 +4213,8 @@ void Spell::EffectSanctuary(SpellEffectIndex /*eff_idx*/)
 {
     if (!unitTarget)
         return;
-    // unitTarget->CombatStop();
 
+    unitTarget->InterruptSpellsCastedOnMe(true);
     unitTarget->CombatStop(false, false);
     unitTarget->getHostileRefManager().deleteReferences();  // stop all fighting
 
@@ -4387,6 +4422,14 @@ void Spell::EffectActivateObject(SpellEffectIndex eff_idx)
         case 8:                     // GO usage with TargetB = none or random
         case 10:                    // unk - 2 spells
         {
+            // Specific case for Darkmoon Faire Cannon (this is probably a hint that our logic about GO use / activation is not accurate)
+            switch (m_spellInfo->Id)
+            {
+            case 24731:
+                gameObjTarget->SendGameObjectCustomAnim(gameObjTarget->GetObjectGuid());
+                return;
+            }
+
             static ScriptInfo activateCommand = generateActivateCommand();
 
             int32 delay_secs = m_spellInfo->CalculateSimpleValue(eff_idx);
@@ -5049,6 +5092,10 @@ void Spell::EffectSummonCritter(SpellEffectIndex eff_idx)
     map->Add((Creature*)critter);
     critter->AIM_Initialize();
 
+    //for MINI_PET we ensure to set a passive react
+    if (CreatureAI* critterAI = critter->AI())
+        critterAI->SetReactState(REACT_PASSIVE);
+
     // Notify Summoner
     if (m_originalCaster && (m_originalCaster != m_caster) && (m_originalCaster->AI()))
         m_originalCaster->AI()->JustSummoned(critter);
@@ -5333,6 +5380,13 @@ void Spell::EffectTransmitted(SpellEffectIndex eff_idx)
             m_caster->AddGameObject(pGameObj);
             break;
         }
+        // Other GO types have startOpen attribute but only GAMEOBJECT_TYPE_BUTTON is used by spells
+        case GAMEOBJECT_TYPE_BUTTON:
+        {
+            // Change GO state if it is supposed to be already activated at summoning
+            pGameObj->SetGoState((goinfo->button.startOpen ? GO_STATE_ACTIVE : GO_STATE_READY));
+            break;
+        }
         case GAMEOBJECT_TYPE_FISHINGHOLE:
         case GAMEOBJECT_TYPE_CHEST:
         default:
@@ -5369,11 +5423,11 @@ void Spell::EffectSkill(SpellEffectIndex /*eff_idx*/)
 
 void Spell::EffectSummonDemon(SpellEffectIndex eff_idx)
 {
-    float px = m_targets.m_destX;
-    float py = m_targets.m_destY;
-    float pz = m_targets.m_destZ;
+    float x = m_targets.m_destX;
+    float y = m_targets.m_destY;
+    float z = m_targets.m_destZ;
 
-    Creature* Charmed = m_caster->SummonCreature(m_spellInfo->EffectMiscValue[eff_idx], px, py, pz, m_caster->GetOrientation(), TEMPSPAWN_TIMED_OR_DEAD_DESPAWN, 3600000);
+    Creature* Charmed = m_caster->SummonCreature(m_spellInfo->EffectMiscValue[eff_idx], x, y, z, m_caster->GetOrientation(), TEMPSPAWN_TIMED_OR_DEAD_DESPAWN, 3600000);
     if (!Charmed)
         return;
 
@@ -5382,13 +5436,18 @@ void Spell::EffectSummonDemon(SpellEffectIndex eff_idx)
 
     // TODO: Add damage/mana/hp according to level
 
-    if (m_spellInfo->EffectMiscValue[eff_idx] == 89)        // Inferno summon
+    switch (m_spellInfo->Id)
     {
-        // Enslave demon effect, without mana cost and cooldown
-        m_caster->CastSpell(Charmed, 20882, TRIGGERED_OLD_TRIGGERED);          // FIXME: enslave does not scale with level, level 62+ minions cannot be enslaved
-
-        // Inferno effect
-        Charmed->CastSpell(Charmed, 22703, TRIGGERED_OLD_TRIGGERED);
+        case 1122: // Warlock Infernal - requires custom code - generalized in WOTLK
+        {
+            Charmed->SelectLevel(m_caster->getLevel()); // needs to have casters level
+            // Enslave demon effect, without mana cost and cooldown
+            Charmed->CastSpell(Charmed, 22707, TRIGGERED_OLD_TRIGGERED);  // short root spell on infernal from sniffs
+            m_caster->CastSpell(Charmed, 20882, TRIGGERED_OLD_TRIGGERED);
+            Charmed->CastSpell(nullptr, 22699, TRIGGERED_NONE);  // Inferno effect
+            Charmed->CastSpell(x, y, z, 20310, TRIGGERED_NONE);  // Stun
+            break;
+        }
     }
 }
 

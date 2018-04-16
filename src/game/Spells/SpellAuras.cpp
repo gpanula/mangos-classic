@@ -834,8 +834,10 @@ void Aura::TriggerSpell()
                     }
 //                    // Restoration
 //                    case 24379: break;
-//                    // Cannon Prep
-//                    case 24832: break;
+                    case 24743:                             // Cannon Prep
+                    case 24832:                             // Cannon Prep
+                        trigger_spell_id = 24731;
+                        break;
                     case 24834:                             // Shadow Bolt Whirl
                     {
                         uint32 spellForTick[8] = { 24820, 24821, 24822, 24823, 24835, 24836, 24837, 24838 };
@@ -1374,7 +1376,7 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                 {
                     if (apply)
                     {
-                        target->SetStandState(UNIT_STAND_STATE_DEAD);
+                        target->SetStandState(UNIT_STAND_STATE_SLEEP);
                         target->addUnitState(UNIT_STAT_ROOT);
                     }
                     else
@@ -1420,7 +1422,7 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                     // Some appear to be used depending on creature location, in water, at solid ground, in air/suspended, etc
                     // For now, just handle all the same way
                     if (target->GetTypeId() == TYPEID_UNIT)
-                        target->SetFeignDeath(apply);
+                        target->SetFeignDeath(apply, GetCasterGuid(), GetId());
 
                     return;
                 }
@@ -1755,6 +1757,21 @@ void Aura::HandleAuraModShapeshift(bool apply, bool Real)
                 case FORM_DEFENSIVESTANCE:
                 case FORM_BERSERKERSTANCE:
                 {
+                    ShapeshiftForm previousForm = target->GetShapeshiftForm();
+                    uint32 ragePercent = 0;
+                    if (previousForm == FORM_DEFENSIVESTANCE)
+                    {
+                        Unit::AuraList const& auraClassScripts = target->GetAurasByType(SPELL_AURA_OVERRIDE_CLASS_SCRIPTS);
+                        for (Unit::AuraList::const_iterator itr = auraClassScripts.begin(); itr != auraClassScripts.end();)
+                        {
+                            if ((*itr)->GetModifier()->m_miscvalue == 831)
+                            {
+                                ragePercent = (*itr)->GetModifier()->m_amount;
+                            }
+                            else
+                                ++itr;
+                        }
+                    }
                     uint32 Rage_val = 0;
                     // Tactical mastery
                     if (target->GetTypeId() == TYPEID_PLAYER)
@@ -1775,7 +1792,13 @@ void Aura::HandleAuraModShapeshift(bool apply, bool Real)
                                 break;
                         }
                     }
-                    if (target->GetPower(POWER_RAGE) > Rage_val)
+
+                    if (ragePercent) // not zero
+                    {
+                        if (ragePercent != 100) // optimization
+                            target->SetPower(POWER_RAGE, (target->GetPower(POWER_RAGE) * ragePercent) / 100);
+                    }
+                    else if (target->GetPower(POWER_RAGE) > Rage_val)
                         target->SetPower(POWER_RAGE, Rage_val);
                     break;
                 }
@@ -2204,7 +2227,42 @@ void Aura::HandleFeignDeath(bool apply, bool Real)
     if (!Real)
         return;
 
-    GetTarget()->SetFeignDeath(apply, GetCasterGuid());
+    Unit* target = GetTarget();
+
+    // Do not remove it yet if more effects are up, do it for the last effect
+    if (!apply && target->HasAuraType(SPELL_AURA_FEIGN_DEATH))
+        return;
+
+    if (apply)
+    {
+        bool success = true;
+
+        if (target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
+        {
+            // Players and player-controlled units do an additional success roll for this aura on application
+            const SpellEntry* entry = GetSpellProto();
+            const SpellSchoolMask schoolMask = GetSpellSchoolMask(entry);
+            auto attackers = target->getAttackers();
+            for (auto i = attackers.begin(); i != attackers.end(); ++i)
+            {
+                if ((*i) && !(*i)->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
+                {
+                    if (target->MagicSpellHitResult((*i), entry, schoolMask) != SPELL_MISS_NONE)
+                    {
+                        success = false;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (success)
+            target->InterruptSpellsCastedOnMe();
+
+        target->SetFeignDeath(apply, GetCasterGuid(), GetId(), true, success);
+    }
+    else
+        target->SetFeignDeath(false);
 }
 
 void Aura::HandleAuraModDisarm(bool apply, bool Real)
@@ -3172,6 +3230,30 @@ void Aura::HandleAuraModStat(bool apply, bool /*Real*/)
         return;
     }
 
+    Unit* target = GetTarget();
+
+    if (GetSpellProto()->IsFitToFamilyMask(0x0000000000008000))
+    {
+        if (apply)
+        {
+            int32 staminaToRemove = 0;
+            Unit::AuraList const& auraClassScripts = target->GetAurasByType(SPELL_AURA_OVERRIDE_CLASS_SCRIPTS);
+            for (Unit::AuraList::const_iterator itr = auraClassScripts.begin(); itr != auraClassScripts.end();)
+            {
+                switch ((*itr)->GetModifier()->m_miscvalue)
+                {
+                    case 2388: staminaToRemove = m_modifier.m_amount * 10 / 100; break;
+                    case 2389: staminaToRemove = m_modifier.m_amount * 20 / 100; break;
+                    case 2390: staminaToRemove = m_modifier.m_amount * 30 / 100; break;
+                }
+            }
+            if (staminaToRemove)
+                GetCaster()->CastCustomSpell(target, 19486, &staminaToRemove, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED);
+        }
+        else
+            target->RemoveAurasTriggeredBySpell(GetId(), GetCasterGuid()); // just do it every time, lookup is too time consuming
+    }
+
     for (int32 i = STAT_STRENGTH; i < MAX_STATS; ++i)
     {
         // -1 or -2 is all stats ( misc < -2 checked in function beginning )
@@ -3179,8 +3261,8 @@ void Aura::HandleAuraModStat(bool apply, bool /*Real*/)
         {
             // m_target->ApplyStatMod(Stats(i), m_modifier.m_amount,apply);
             GetTarget()->HandleStatModifier(UnitMods(UNIT_MOD_STAT_START + i), TOTAL_VALUE, float(m_modifier.m_amount), apply);
-            if (GetTarget()->GetTypeId() == TYPEID_PLAYER)
-                ((Player*)GetTarget())->ApplyStatBuffMod(Stats(i), float(m_modifier.m_amount), apply);
+            if (target->GetTypeId() == TYPEID_PLAYER)
+                ((Player*)target)->ApplyStatBuffMod(Stats(i), float(m_modifier.m_amount), apply);
         }
     }
 }
@@ -5327,33 +5409,6 @@ void SpellAuraHolder::Update(uint32 diff)
                             caster->ModifyHealth(-manaPerSecond);
                         else
                             caster->ModifyPower(powertype, -manaPerSecond);
-                    }
-                }
-            }
-
-            // Channeled aura required check distance from caster
-            if (IsChanneledSpell(m_spellProto) && GetCasterGuid() != m_target->GetObjectGuid())
-            {
-                Unit* caster = GetCaster();
-                if (!caster)
-                {
-                    m_target->RemoveAurasByCasterSpell(GetId(), GetCasterGuid());
-                    return;
-                }
-
-                // need check distance for channeled target only
-                if (caster->HasChannelObject(m_target->GetObjectGuid()))
-                {
-                    // Get spell range
-                    float max_range = GetSpellMaxRange(sSpellRangeStore.LookupEntry(m_spellProto->rangeIndex));
-
-                    if (Player* modOwner = caster->GetSpellModOwner())
-                        modOwner->ApplySpellMod(GetId(), SPELLMOD_RANGE, max_range, nullptr);
-
-                    if (!caster->IsWithinDistInMap(m_target, max_range))
-                    {
-                        caster->InterruptSpell(CURRENT_CHANNELED_SPELL);
-                        return;
                     }
                 }
             }

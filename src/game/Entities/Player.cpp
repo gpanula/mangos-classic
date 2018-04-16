@@ -544,6 +544,9 @@ Player::Player(WorldSession* session): Unit(), m_mover(this), m_camera(this), m_
         m_auraBaseMod[i][PCT_MOD] = 1.0f;
     }
 
+    for (int i = 0; i < MAX_ATTACK; ++i)
+        m_enchantmentFlatMod[i] = 0;
+
     // Player summoning
     m_summon_expire = 0;
     m_summon_mapid = 0;
@@ -2572,7 +2575,7 @@ void Player::InitStatsForLevel(bool reapplyMods)
 
     // cleanup unit flags (will be re-applied if need at aura load).
     RemoveFlag(UNIT_FIELD_FLAGS,
-               UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NON_MOVING_DEPRECATED | UNIT_FLAG_NOT_ATTACKABLE_1 |
+               UNIT_FLAG_UNK_0 | UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_CLIENT_CONTROL_LOST | UNIT_FLAG_NOT_ATTACKABLE_1 |
                UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC    | UNIT_FLAG_LOOTING          |
                UNIT_FLAG_PET_IN_COMBAT  | UNIT_FLAG_SILENCED     | UNIT_FLAG_PACIFIED         |
                UNIT_FLAG_STUNNED        | UNIT_FLAG_IN_COMBAT    | UNIT_FLAG_DISARMED         |
@@ -6977,6 +6980,10 @@ void Player::CastItemCombatSpell(Unit* Target, WeaponAttackType attType)
                 continue;
             }
 
+            // not allow proc extra attack spell at extra attack
+            if (m_extraAttacks && IsSpellHaveEffect(spellInfo, SPELL_EFFECT_ADD_EXTRA_ATTACKS))
+                continue;
+
             // Use first rank to access spell item enchant procs
             float ppmRate = sSpellMgr.GetItemEnchantProcChance(spellInfo->Id);
 
@@ -9471,6 +9478,7 @@ Item* Player::_StoreItem(uint16 pos, Item* pItem, uint32 count, bool clone, bool
 
         AddEnchantmentDurations(pItem);
         AddItemDurations(pItem);
+        sScriptDevAIMgr.OnItemLoot(this, pItem, true);
 
         return pItem;
     }
@@ -9797,6 +9805,8 @@ void Player::DestroyItem(uint8 bag, uint8 slot, bool update)
 
         RemoveEnchantmentDurations(pItem);
         RemoveItemDurations(pItem);
+
+        sScriptDevAIMgr.OnItemLoot(this, pItem, false);
 
         ItemRemovedQuestCheck(pItem->GetEntry(), pItem->GetCount());
 
@@ -10792,12 +10802,29 @@ void Player::ApplyEnchantment(Item* item, EnchantmentSlot slot, bool apply, bool
                     // processed in Player::CastItemCombatSpell
                     break;
                 case ITEM_ENCHANTMENT_TYPE_DAMAGE:
+                    // processed in Player::_ApplyWeaponDependentAuraMods
+                    //if (item->GetSlot() == EQUIPMENT_SLOT_MAINHAND)
+                    //    HandleStatModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_VALUE, float(enchant_amount), apply);
+                    //else if (item->GetSlot() == EQUIPMENT_SLOT_OFFHAND)
+                    //    HandleStatModifier(UNIT_MOD_DAMAGE_OFFHAND, TOTAL_VALUE, float(enchant_amount), apply);
+                    //else if (item->GetSlot() == EQUIPMENT_SLOT_RANGED)
+                    //    HandleStatModifier(UNIT_MOD_DAMAGE_RANGED, TOTAL_VALUE, float(enchant_amount), apply);
+                    //UpdateDamagePhysical
                     if (item->GetSlot() == EQUIPMENT_SLOT_MAINHAND)
-                        HandleStatModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_VALUE, float(enchant_amount), apply);
+                    {
+                        SetEnchantmentModifier(enchant_amount, BASE_ATTACK, apply);
+                        UpdateDamagePhysical(BASE_ATTACK);
+                    }
                     else if (item->GetSlot() == EQUIPMENT_SLOT_OFFHAND)
-                        HandleStatModifier(UNIT_MOD_DAMAGE_OFFHAND, TOTAL_VALUE, float(enchant_amount), apply);
+                    {
+                        SetEnchantmentModifier(enchant_amount, OFF_ATTACK, apply);
+                        UpdateDamagePhysical(OFF_ATTACK);
+                    }
                     else if (item->GetSlot() == EQUIPMENT_SLOT_RANGED)
-                        HandleStatModifier(UNIT_MOD_DAMAGE_RANGED, TOTAL_VALUE, float(enchant_amount), apply);
+                    {
+                        SetEnchantmentModifier(enchant_amount, RANGED_ATTACK, apply);
+                        UpdateDamagePhysical(RANGED_ATTACK);
+                    }
                     break;
                 case ITEM_ENCHANTMENT_TYPE_EQUIP_SPELL:
                 {
@@ -15691,6 +15718,12 @@ void Player::SendAutoRepeatCancel() const
     GetSession()->SendPacket(data);
 }
 
+void Player::SendFeignDeathResisted() const
+{
+    WorldPacket data(SMSG_FEIGN_DEATH_RESISTED, 0);
+    GetSession()->SendPacket(data);
+}
+
 void Player::SendExplorationExperience(uint32 Area, uint32 Experience) const
 {
     WorldPacket data(SMSG_EXPLORATION_EXPERIENCE, 8);
@@ -16269,7 +16302,7 @@ bool Player::ActivateTaxiPathTo(std::vector<uint32> const& nodes, Creature* npc 
         return false;
     }
 
-    if (HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_MOVING_DEPRECATED))
+    if (HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_CLIENT_CONTROL_LOST))
         return false;
 
     // taximaster case
@@ -16410,7 +16443,11 @@ bool Player::ActivateTaxiPathTo(std::vector<uint32> const& nodes, Creature* npc 
     uint32 money = GetMoney();
 
     if (npc)
-        totalcost = (uint32)ceil(totalcost * GetReputationPriceDiscount(npc));
+    {
+        float discount = GetReputationPriceDiscount(npc);
+        totalcost = (uint32)ceil(totalcost * discount);
+        firstcost = (uint32)ceil(firstcost * discount);
+    }
 
     if (money < totalcost)
     {
@@ -17992,7 +18029,7 @@ void Player::RewardPlayerAndGroupAtCast(WorldObject* pRewardSource, uint32 spell
 
 bool Player::IsAtGroupRewardDistance(WorldObject const* pRewardSource) const
 {
-    if (pRewardSource->IsWithinDistInMap(this, sWorld.getConfig(CONFIG_FLOAT_GROUP_XP_DISTANCE)))
+    if (IsInWorld() && pRewardSource->GetMap() == GetMap() && pRewardSource->IsWithinDistInMap(this, sWorld.getConfig(CONFIG_FLOAT_GROUP_XP_DISTANCE)))
         return true;
 
     if (isAlive())
@@ -18002,7 +18039,7 @@ bool Player::IsAtGroupRewardDistance(WorldObject const* pRewardSource) const
     if (!corpse)
         return false;
 
-    return pRewardSource->IsWithinDistInMap(corpse, sWorld.getConfig(CONFIG_FLOAT_GROUP_XP_DISTANCE));
+    return corpse->IsInWorld() && pRewardSource->GetMap() == corpse->GetMap() && pRewardSource->IsWithinDistInMap(corpse, sWorld.getConfig(CONFIG_FLOAT_GROUP_XP_DISTANCE));
 }
 
 uint32 Player::GetBaseWeaponSkillValue(WeaponAttackType attType) const
@@ -18064,50 +18101,13 @@ void Player::ResurectUsingRequestData()
     SpawnCorpseBones();
 }
 
-bool Player::IsClientControl(Unit const* target) const
-{
-    if (!target)
-        return false;
-
-    // Applies only to player controlled units
-    if (!target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
-        return false;
-
-    // These flags are meant to be used with client control taken away (4/5 confirmed by data)
-    if (target->HasFlag(UNIT_FIELD_FLAGS, (UNIT_FLAG_UNK_0 | UNIT_FLAG_NON_MOVING_DEPRECATED | UNIT_FLAG_CONFUSED | UNIT_FLAG_FLEEING | UNIT_FLAG_TAXI_FLIGHT)))
-        return false;
-
-    // Player in completed battleground during "score screen"
-    // TODO: research if its actually done serverside with any of flags listed above;
-    // It would make perfect sense and clean this implementation up a bit
-    if (target->GetTypeId() == TYPEID_PLAYER)
-    {
-        Player const* player = static_cast<Player const*>(target);
-        if (player->InBattleGround())
-        {
-            if (const BattleGround* bg = player->GetBattleGround())
-            {
-                if (bg->GetStatus() == STATUS_WAIT_LEAVE)
-                    return false;
-            }
-        }
-    }
-
-    // If unit is possessed, it must be charmed by the player
-    if (target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_POSSESSED))
-        return target->HasCharmer(GetObjectGuid());
-
-    // Players only have control over self by default
-    return (target == this);
-}
-
 void Player::UpdateClientControl(Unit const* target, bool enabled, bool forced) const
 {
     if (target)
     {
         // Sending disabled control multiple times for the same unit is harmless (seen in data all the time)
         // Do a double-check if we should enable it only
-        if (forced || !enabled || IsClientControl(target))
+        if (forced || !enabled || target->IsClientControlled(this))
         {
             const PackedGuid& packedGuid = target->GetPackGUID();
             WorldPacket data(SMSG_CLIENT_CONTROL_UPDATE, packedGuid.size() + 1);
@@ -18223,32 +18223,6 @@ void Player::SendCorpseReclaimDelay(bool load) const
     WorldPacket data(SMSG_CORPSE_RECLAIM_DELAY, 4);
     data << uint32(delay * IN_MILLISECONDS);
     GetSession()->SendPacket(data);
-}
-
-Player* Player::GetNextRandomRaidMember(float radius)
-{
-    Group* pGroup = GetGroup();
-    if (!pGroup)
-        return nullptr;
-
-    std::vector<Player*> nearMembers;
-    nearMembers.reserve(pGroup->GetMembersCount());
-
-    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
-    {
-        Player* Target = itr->getSource();
-
-        // IsHostileTo check duel and controlled by enemy
-        if (Target && Target != this && IsWithinDistInMap(Target, radius) &&
-                !Target->HasInvisibilityAura() && CanAssist(Target))
-            nearMembers.push_back(Target);
-    }
-
-    if (nearMembers.empty())
-        return nullptr;
-
-    uint32 randTarget = urand(0, nearMembers.size() - 1);
-    return nearMembers[randTarget];
 }
 
 PartyResult Player::CanUninviteFromGroup() const
@@ -19110,6 +19084,15 @@ void Player::DoInteraction(ObjectGuid const& interactObjGuid)
     SendForcedObjectUpdate();
 }
 
+void Player::SendLootError(ObjectGuid guid, LootError error) const
+{
+    WorldPacket data(SMSG_LOOT_RESPONSE, 10);
+    data << uint64(guid);
+    data << uint8(0);
+    data << uint8(error);
+    SendDirectMessage(data);
+}
+
 void Player::ForceHealAndPowerUpdateInZone()
 {
     for (auto guid : m_clientGUIDs)
@@ -19138,6 +19121,17 @@ void Player::AddGCD(SpellEntry const& spellEntry, uint32 forcedDuration /*= 0*/,
         gcdDuration = 1000;
     else if (gcdDuration > 1500)
         gcdDuration = 1500;
+
+    // TODO: Remove this once spells are queuable and GCD is checked on execute
+    if (uint32 latency = GetSession()->GetLatency())
+    {
+        if (latency > 300)
+            gcdDuration -= 300;
+        else
+            gcdDuration -= latency;
+
+        gcdDuration -= GetMap()->GetCurrentDiff() > 200 ? 200 : GetMap()->GetCurrentDiff();
+    }
 
     WorldObject::AddGCD(spellEntry, gcdDuration);
 
